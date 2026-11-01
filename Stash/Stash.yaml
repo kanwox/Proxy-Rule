@@ -398,6 +398,11 @@ rule-providers:
     interval: 604800
 
 rules:
+  # 防止代理回环
+  - IP-CIDR,127.0.0.0/8,REJECT,no-resolve
+  - IP-CIDR,0.0.0.0/32,REJECT,no-resolve
+  - IP-CIDR6,::1/128,REJECT,no-resolve
+  - IP-CIDR6,::/128,REJECT,no-resolve
   - RULE-SET,private-domain,DIRECT
   - RULE-SET,lan-cidr,DIRECT,no-resolve
   - RULE-SET,ads-domain,REJECT

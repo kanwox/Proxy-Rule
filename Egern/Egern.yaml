@@ -155,6 +155,23 @@ policy_groups:
       icon: https://cdn.jsdmirror.com/gh/Koolson/Qure@master/IconSet/Color/Final.png
 
 rules:
+  # 防止代理回环
+  - ip_cidr:
+      match: 127.0.0.0/8
+      no_resolve: true
+    policy: REJECT
+  - ip_cidr:
+      match: 0.0.0.0/32
+      no_resolve: true
+    policy: REJECT
+  - ip_cidr6:
+      match: "::1/128"
+      no_resolve: true
+    policy: REJECT
+  - ip_cidr6:
+      match: "::/128"
+      no_resolve: true
+    policy: REJECT
   - rule_set:
       match: "https://cdn.jsdmirror.com/gh/Repcz/Tool@X/Egern/Rules/Lan.yaml"
       policy: DIRECT

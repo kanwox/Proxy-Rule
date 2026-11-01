@@ -1037,6 +1037,13 @@ function main(params) {
     // 规则先命中先决定，顺序：私网/广告 → NAS 厂商服务 → 传输层兜底（NTP、QUIC，须先于应用分流）→ 应用分流 → 国内直连 → MATCH
     // cn-domain 排在 Google / Apple / Microsoft 之后，避免其国内 CDN 域名被直连截胡
     params.rules = [
+        // 防止代理回环
+        "IP-CIDR,127.0.0.0/8,REJECT,no-resolve",
+        "IP-CIDR,0.0.0.0/32,REJECT,no-resolve",
+        "IP-CIDR6,::1/128,REJECT,no-resolve",
+        "IP-CIDR6,::/128,REJECT,no-resolve",
+        "AND,((IN-TYPE,TUN),(DST-PORT,853)),REJECT",
+
         "RULE-SET,private-domain,DIRECT",
         "RULE-SET,private-ip,DIRECT,no-resolve",
         "RULE-SET,ads-domain,REJECT",
