@@ -41,10 +41,10 @@ dns:
     - system
   upstreams:
     china:
-      - https://dns.alidns.com/dns-query
-      - https://doh.pub/dns-query
+      - https://223.5.5.5/dns-query
+      - https://1.12.12.12/dns-query
   forward:
-    - wildcard:
+    - domain_wildcard:
         match: "*"
         value: china
 
@@ -59,7 +59,7 @@ policy_groups:
       name: 静态
       urls:
         - "订阅链接填写处"
-      filter: "(?i)^(?!.*(流量|时间|重置|到期|过期|官网|网址|地址|客服|订阅|通知|群组|有效|本站|防止|Expire|Traffic|Reset|(^|[^A-Za-z0-9])(\\d+(\\.\\d+)?\\s*(GB|TB)|\\d+\\s*Days?)([^A-Za-z0-9]|$))).*$"
+      filter: "(?i)^(?!.*(剩余|官网|套餐|流量|到期|过期|重置|更新|刷新|订阅|时间|地址|有效|通知|本站|群|网址|客服|欢迎|加入|防止|Expire|Traffic|Reset|(^|[^A-Za-z0-9])(\\d+(\\.\\d+)?\\s*(GB|TB)|\\d+\\s*Days?)([^A-Za-z0-9]|$))).*$"
       update_interval: 86400
       icon: https://cdn.jsdmirror.com/gh/Koolson/Qure@master/IconSet/Color/Static.png
   - select:
@@ -158,20 +158,20 @@ rules:
   # 防止代理回环
   - ip_cidr:
       match: 127.0.0.0/8
+      policy: REJECT
       no_resolve: true
-    policy: REJECT
   - ip_cidr:
       match: 0.0.0.0/32
+      policy: REJECT
       no_resolve: true
-    policy: REJECT
   - ip_cidr6:
       match: "::1/128"
+      policy: REJECT
       no_resolve: true
-    policy: REJECT
   - ip_cidr6:
       match: "::/128"
+      policy: REJECT
       no_resolve: true
-    policy: REJECT
   - rule_set:
       match: "https://cdn.jsdmirror.com/gh/Repcz/Tool@X/Egern/Rules/Lan.yaml"
       policy: DIRECT

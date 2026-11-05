@@ -22,10 +22,10 @@
 1. 打开 [Egern.yaml](./Egern.yaml)。
 2. 将 `静态` 策略组中 `urls` 下的 `订阅链接填写处` 替换为真实订阅链接：
    ```yaml
-   - name: 静态
-     type: select
-     urls:
-       - "你的真实订阅链接"
+   - select:
+       name: 静态
+       urls:
+         - "你的真实订阅链接"
    ```
 3. 导入 Egern 并启用配置。
 

@@ -106,7 +106,7 @@ function main(params) {
 
     // 节点名里的信息类关键词（剩余流量、到期时间、群链接等），这些不该单独成为可选节点
     const excludeFilter =
-        "(?i)(剩余|官网|套餐|流量|到期|过期|重置|更新|刷新|订阅|时间|地址|有效|通知|本站|群|网址|客服|欢迎|加入|Expire|Traffic|Reset|(^|[^A-Za-z0-9])(\\d+(\\.\\d+)?\\s*(GB|TB)|\\d+\\s*Days?)([^A-Za-z0-9]|$))";
+        "(?i)(剩余|官网|套餐|流量|到期|过期|重置|更新|刷新|订阅|时间|地址|有效|通知|本站|群|网址|客服|欢迎|加入|防止|Expire|Traffic|Reset|(^|[^A-Za-z0-9])(\\d+(\\.\\d+)?\\s*(GB|TB)|\\d+\\s*Days?)([^A-Za-z0-9]|$))";
 
     const QURE_ICON_BASE =
         "https://cdn.jsdmirror.com/gh/Koolson/Qure@master/IconSet/Color";
@@ -165,7 +165,7 @@ function main(params) {
         },
         {
             name: "HK",
-            regex: "(?i)(香港|🇭🇰|(^|[^A-Za-z])HK([^A-Za-z]|$)|(^|[^A-Za-z])HKG([^A-Za-z]|$)|Hong[ -]?Kong)",
+            regex: "(?i)(香港|九龙|🇭🇰|(^|[^A-Za-z])HK([^A-Za-z]|$)|(^|[^A-Za-z])HKG([^A-Za-z]|$)|Hong[ -]?Kong)",
             icon: flagIcon("hk")
         },
         {
@@ -181,7 +181,7 @@ function main(params) {
         },
         {
             name: "JP",
-            regex: "(?i)(日本|东京|東京|大阪|🇯🇵|(^|[^A-Za-z])JP([^A-Za-z]|$)|(^|[^A-Za-z])JPN([^A-Za-z]|$)|Japan)",
+            regex: "(?i)(日本|东京|東京|大阪|名古屋|福冈|🇯🇵|(^|[^A-Za-z])JP([^A-Za-z]|$)|(^|[^A-Za-z])JPN([^A-Za-z]|$)|Japan)",
             icon: flagIcon("jp")
         },
         {
@@ -221,12 +221,12 @@ function main(params) {
         },
         {
             name: "TW",
-            regex: "(?i)(台湾|台灣|台北|新北|🇹🇼|(^|[^A-Za-z])TW([^A-Za-z]|$)|(^|[^A-Za-z])TWN([^A-Za-z]|$)|Taiwan)",
+            regex: "(?i)(台湾|台灣|台北|新北|台中|高雄|🇹🇼|(^|[^A-Za-z])TW([^A-Za-z]|$)|(^|[^A-Za-z])TWN([^A-Za-z]|$)|Taiwan)",
             icon: flagIcon("tw")
         },
         {
             name: "US",
-            regex: "(?i)(美国|美國|洛杉矶|洛杉磯|圣何塞|聖何塞|硅谷|矽谷|西雅图|西雅圖|纽约|紐約|🇺🇸|(^|[^A-Za-z])US([^A-Za-z]|$)|(^|[^A-Za-z])USA([^A-Za-z]|$)|United[ -]?States)",
+            regex: "(?i)(美国|美國|美西|美东|达拉斯|芝加哥|拉斯维加斯|洛杉矶|洛杉磯|圣何塞|聖何塞|硅谷|矽谷|西雅图|西雅圖|纽约|紐約|🇺🇸|(^|[^A-Za-z])US([^A-Za-z]|$)|(^|[^A-Za-z])USA([^A-Za-z]|$)|United[ -]?States)",
             icon: flagIcon("us")
         },
         {
@@ -703,7 +703,10 @@ function main(params) {
             ...new Set([
                 "+.lan",
                 "+.local",
+                "+.home.arpa",
                 "localhost.ptlogin2.qq.com",
+                "localhost.sec.qq.com",
+                "localhost.work.weixin.qq.com",
                 "+.msftconnecttest.com",
                 "+.msftncsi.com",
                 "+.ntp.org",
@@ -714,6 +717,12 @@ function main(params) {
                 "+.srv.nintendo.net",
                 "time.windows.com",
                 "time.apple.com",
+                "time.asia.apple.com",
+                "time.android.com",
+                "time.nist.gov",
+                "ntp.aliyun.com",
+                "ntp.tencent.com",
+                "ntp.ntsc.ac.cn",
                 // STUN 通配：域名含 stun 段的全部豁免假地址
                 "+.stun.*",
                 "+.stun.*.*",
@@ -736,13 +745,13 @@ function main(params) {
                       proxyServerNameserverPolicy
               }
             : {}),
-        // 订阅无 fallback 且有 nameserver 时独占使用；带 fallback 或未指定则用海外 DoH 兜底。#RULES：按路由规则出站，与组名解耦
+        // 订阅无 fallback 且有 nameserver 时独占使用；带 fallback 或未指定则用海外 DoH 兜底
         nameserver:
             !hasFallbackComplexity && subNS.length > 0
                 ? [...new Set(subNS)]
                 : [
-                      "https://1.1.1.1/dns-query#RULES",
-                      "https://8.8.8.8/dns-query#RULES"
+                      "https://1.1.1.1/dns-query#主代理",
+                      "https://8.8.8.8/dns-query#主代理"
                   ],
         // DIRECT 命中且未被 policy 覆盖的域名用国内明文 DNS；DoH 在部分环境会反复回退 default-nameserver，拖高延迟
         "direct-nameserver": [...CN_DNS_PLAIN],

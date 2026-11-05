@@ -1,6 +1,6 @@
 # Clash / Mihomo
 
-适用于支持 JavaScript 扩展脚本的 Mihomo 内核客户端（内核需 ≥ 1.18.0，仅支持节点平铺订阅），如 Clash Verge Rev、Mihomo Party 等。
+适用于支持 JavaScript 扩展脚本的 Mihomo 内核客户端（内核需 ≥ 1.19.26，仅支持节点平铺订阅），如 Clash Verge Rev、Mihomo Party 等。
 
 ---
 
