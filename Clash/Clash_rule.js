@@ -38,7 +38,7 @@ function main(params) {
             proxy.name !== ""
     );
 
-    // provider 订阅的节点运行时才出现，脚本无法枚举成员，组内顺序会被内核按名称重排；
+    // proxy-providers 订阅的节点在内核运行时才拉取，预处理脚本无法读取节点列表来生成地区组与过滤规则；
     // 不支持该形态，直接拒绝生成
     if (Object.keys(params["proxy-providers"] || {}).length > 0) {
         throw new Error(
@@ -106,7 +106,7 @@ function main(params) {
 
     // 节点名里的信息类关键词（剩余流量、到期时间、群链接等），这些不该单独成为可选节点
     const excludeFilter =
-        "(?i)(剩余|官网|套餐|流量|到期|过期|重置|更新|刷新|订阅|时间|地址|有效|通知|本站|群|网址|客服|欢迎|加入|防止|Expire|Traffic|Reset|(^|[^A-Za-z0-9])(\\d+(\\.\\d+)?\\s*(GB|TB)|\\d+\\s*Days?)([^A-Za-z0-9]|$))";
+        "(?i)(剩余|官网|套餐|已用|到期|过期|重置|更新|刷新|订阅|通知|本站|网址|客服|欢迎|Expire|Traffic|Reset|(剩余|已用|可用|查询|超出|总)流量|流量([:：]|\\s*(剩余|已用|可用|重置|耗尽|不足|提醒|查询|统计|清零))|(到期|过期|剩余|重置|更新|刷新|有效)时间|时间[:：]|(官网|最新|发布|永久|备用|防失联|防走丢)地址|地址[:：]|有效期|有效至|(QQ|TG|Telegram|电报|交流|官方|通知|用户)群|群([:：|｜\\s]|$)|加群|入群|群聊|群号|群组|群链接|加入(我们|群|TG|电报|频道|Telegram|QQ)|防(失联|走丢)|(^|[^A-Za-z0-9])(\\d+\\s*Days?|(Data|Used|Left|Remain|Quota)\\s*[:：\\s]*\\d+(\\.\\d+)?\\s*(GB|TB)|\\d+(\\.\\d+)?\\s*(GB|TB)\\s*/\\s*\\d+(\\.\\d+)?\\s*(GB|TB))([^A-Za-z0-9]|$))";
 
     const QURE_ICON_BASE =
         "https://cdn.jsdmirror.com/gh/Koolson/Qure@master/IconSet/Color";
@@ -120,17 +120,17 @@ function main(params) {
     const regions = [
         {
             name: "AE",
-            regex: "(?i)(阿联酋|阿聯酋|迪拜|阿布扎比|🇦🇪|(^|[^A-Za-z])UAE([^A-Za-z]|$)|Emirates|Dubai)",
+            regex: "(?i)(阿联酋|阿聯酋|迪拜|阿布扎比|🇦🇪|(^|[^A-Za-z])UAE([^A-Za-z]|$)|Emirates|Dubai|Abu[ -]?Dhabi)",
             icon: flagIcon("ae")
         },
         {
             name: "AR",
-            regex: "(?i)(阿根廷|布宜诺斯艾利斯|🇦🇷|(^|[^A-Za-z])AR([^A-Za-z]|$)|(^|[^A-Za-z])ARG([^A-Za-z]|$)|Argentina)",
+            regex: "(?i)(阿根廷|布宜诺斯艾利斯|🇦🇷|(^|[^A-Za-z])AR([^A-Za-z]|$)|(^|[^A-Za-z])ARG([^A-Za-z]|$)|Argentina|Buenos[ -]?Aires)",
             icon: flagIcon("ar")
         },
         {
             name: "AU",
-            regex: "(?i)(澳大利亚|澳大利亞|澳洲|悉尼|墨尔本|墨爾本|🇦🇺|(^|[^A-Za-z])AU([^A-Za-z]|$)|(^|[^A-Za-z])AUS([^A-Za-z]|$)|Australia|Sydney|Melbourne)",
+            regex: "(?i)(澳大利亚|澳大利亞|澳洲|悉尼|墨尔本|墨爾本|🇦🇺|(^|[^A-Za-z])AU([^A-Za-z]|$)|(^|[^A-Za-z])AUS([^A-Za-z]|$)|Australia|Sydney|Melbourne|Brisbane|Perth|Adelaide)",
             icon: flagIcon("au")
         },
         {
@@ -140,63 +140,63 @@ function main(params) {
         },
         {
             name: "BR",
-            regex: "(?i)(巴西|圣保罗|聖保羅|🇧🇷|(^|[^A-Za-z])BR([^A-Za-z]|$)|(^|[^A-Za-z])BRA([^A-Za-z]|$)|Brazil|Brasil|SaoPaulo)",
+            regex: "(?i)(巴西|圣保罗|聖保羅|🇧🇷|(^|[^A-Za-z])BR([^A-Za-z]|$)|(^|[^A-Za-z])BRA([^A-Za-z]|$)|Brazil|Brasil|(Sao|São)[ -]?Paulo|Rio[ -]?de[ -]?Janeiro|(^|[^A-Za-z])Rio([^A-Za-z]|$))",
             icon: flagIcon("br")
         },
         {
             name: "CA",
-            regex: "(?i)(加拿大|多伦多|多倫多|温哥华|溫哥華|🇨🇦|(^|[^A-Za-z])CA([^A-Za-z]|$)|(^|[^A-Za-z])CAN([^A-Za-z]|$)|Canada|Toronto|Vancouver)",
+            regex: "(?i)(加拿大|多伦多|多倫多|温哥华|溫哥華|🇨🇦|(^|[^A-Za-z])CA([^A-Za-z]|$)|(^|[^A-Za-z])CAN([^A-Za-z]|$)|Canada|Toronto|Vancouver|Montreal|Calgary)",
             icon: flagIcon("ca")
         },
         {
             name: "DE",
-            regex: "(?i)(德国|德國|法兰克福|法蘭克福|🇩🇪|(^|[^A-Za-z])DE([^A-Za-z]|$)|(^|[^A-Za-z])DEU([^A-Za-z]|$)|Germany|Frankfurt)",
+            regex: "(?i)(德国|德國|法兰克福|法蘭克福|🇩🇪|(^|[^A-Za-z])DE([^A-Za-z]|$)|(^|[^A-Za-z])DEU([^A-Za-z]|$)|Germany|Frankfurt|Berlin|Munich|Düsseldorf|Dusseldorf|Nuremberg)",
             icon: flagIcon("de")
         },
         {
             name: "FR",
-            regex: "(?i)(法国|法國|巴黎|🇫🇷|(^|[^A-Za-z])FR([^A-Za-z]|$)|(^|[^A-Za-z])FRA([^A-Za-z]|$)|France|Paris)",
+            regex: "(?i)(法国|法國|巴黎|🇫🇷|(^|[^A-Za-z])FR([^A-Za-z]|$)|(^|[^A-Za-z])FRA([^A-Za-z]|$)|France|Paris|Marseille|Lyon)",
             icon: flagIcon("fr")
         },
         {
             name: "GB",
-            regex: "(?i)(英国|英國|伦敦|倫敦|🇬🇧|(^|[^A-Za-z])UK([^A-Za-z]|$)|(^|[^A-Za-z])GB([^A-Za-z]|$)|(^|[^A-Za-z])GBR([^A-Za-z]|$)|United[ -]?Kingdom|England|London)",
+            regex: "(?i)(英国|英國|伦敦|倫敦|🇬🇧|(^|[^A-Za-z])UK([^A-Za-z]|$)|(^|[^A-Za-z])GB([^A-Za-z]|$)|(^|[^A-Za-z])GBR([^A-Za-z]|$)|United[ -]?Kingdom|England|London|Manchester|Edinburgh)",
             icon: flagIcon("gb")
         },
         {
             name: "HK",
-            regex: "(?i)(香港|九龙|🇭🇰|(^|[^A-Za-z])HK([^A-Za-z]|$)|(^|[^A-Za-z])HKG([^A-Za-z]|$)|Hong[ -]?Kong)",
+            regex: "(?i)(香港|九龙|🇭🇰|(^|[^A-Za-z])HK([^A-Za-z]|$)|(^|[^A-Za-z])HKG([^A-Za-z]|$)|Hong[ -]?Kong|Kowloon|Tsuen[ -]?Wan)",
             icon: flagIcon("hk")
         },
         {
             name: "ID",
-            regex: "(?i)(印度尼西亚|印度尼西亞|印尼|雅加达|雅加達|🇮🇩|Indonesia|Jakarta|(^|[^A-Za-z])ID([^A-Za-z]|$)|(^|[^A-Za-z])IDN([^A-Za-z]|$))",
+            regex: "(?i)(印度尼西亚|印度尼西亞|印尼|雅加达|雅加達|🇮🇩|Indonesia|Jakarta|Surabaya|(^|[^A-Za-z])ID([^A-Za-z]|$)|(^|[^A-Za-z])IDN([^A-Za-z]|$))",
             icon: flagIcon("id")
         },
         {
             // 印度([^尼]|$) 只排除"印度尼西亚"；含独立 token IN 的节点名会同时命中 ID 与 IN，内核各组 filter 相互独立、无组间排除
             name: "IN",
-            regex: "(?i)(印度([^尼]|$)|新德里|孟买|孟買|班加罗尔|班加羅爾|🇮🇳|(^|[^A-Za-z])India([^A-Za-z]|$)|Mumbai|Delhi|Bangalore|(^|[^A-Za-z])IN([^A-Za-z]|$)|(^|[^A-Za-z])IND([^A-Za-z]|$))",
+            regex: "(?i)(印度([^尼]|$)|新德里|孟买|孟買|班加罗尔|班加羅爾|🇮🇳|(^|[^A-Za-z])India([^A-Za-z]|$)|Mumbai|(New[ -]?)?Delhi|Bangalore|Chennai|Hyderabad|(^|[^A-Za-z])IN([^A-Za-z]|$)|(^|[^A-Za-z])IND([^A-Za-z]|$))",
             icon: flagIcon("in")
         },
         {
             name: "JP",
-            regex: "(?i)(日本|东京|東京|大阪|名古屋|福冈|🇯🇵|(^|[^A-Za-z])JP([^A-Za-z]|$)|(^|[^A-Za-z])JPN([^A-Za-z]|$)|Japan)",
+            regex: "(?i)(日本|东京|東京|大阪|名古屋|福冈|🇯🇵|(^|[^A-Za-z])JP([^A-Za-z]|$)|(^|[^A-Za-z])JPN([^A-Za-z]|$)|Japan|Tokyo|Osaka|Narita|Haneda|Kyoto|Fukuoka|Nagoya|Sapporo)",
             icon: flagIcon("jp")
         },
         {
             name: "KR",
-            regex: "(?i)(韩国|韓國|南韩|南韓|首尔|首爾|🇰🇷|(^|[^A-Za-z])KR([^A-Za-z]|$)|(^|[^A-Za-z])KOR([^A-Za-z]|$)|Korea)",
+            regex: "(?i)(韩国|韓國|南韩|南韓|首尔|首爾|🇰🇷|(^|[^A-Za-z])KR([^A-Za-z]|$)|(^|[^A-Za-z])KOR([^A-Za-z]|$)|Korea|Seoul|Busan|Incheon|Chuncheon)",
             icon: flagIcon("kr")
         },
         {
             name: "MY",
-            regex: "(?i)(马来西亚|馬來西亞|吉隆坡|🇲🇾|(^|[^A-Za-z])MY([^A-Za-z]|$)|(^|[^A-Za-z])MYS([^A-Za-z]|$)|Malaysia)",
+            regex: "(?i)(马来西亚|馬來西亞|吉隆坡|🇲🇾|(^|[^A-Za-z])MY([^A-Za-z]|$)|(^|[^A-Za-z])MYS([^A-Za-z]|$)|Malaysia|Kuala[ -]?Lumpur|Johor[ -]?Bahru|Cyberjaya)",
             icon: flagIcon("my")
         },
         {
             name: "NL",
-            regex: "(?i)(荷兰|荷蘭|阿姆斯特丹|🇳🇱|(^|[^A-Za-z])NL([^A-Za-z]|$)|(^|[^A-Za-z])NLD([^A-Za-z]|$)|Netherlands|Amsterdam)",
+            regex: "(?i)(荷兰|荷蘭|阿姆斯特丹|🇳🇱|(^|[^A-Za-z])NL([^A-Za-z]|$)|(^|[^A-Za-z])NLD([^A-Za-z]|$)|Netherlands|Amsterdam|Rotterdam)",
             icon: flagIcon("nl")
         },
         {
@@ -211,22 +211,22 @@ function main(params) {
         },
         {
             name: "TH",
-            regex: "(?i)(泰国|泰國|曼谷|🇹🇭|Thailand|Bangkok|(^|[^A-Za-z])TH([^A-Za-z]|$)|(^|[^A-Za-z])THA([^A-Za-z]|$))",
+            regex: "(?i)(泰国|泰國|曼谷|🇹🇭|Thailand|Bangkok|Pattaya|Chiang[ -]?Mai|(^|[^A-Za-z])TH([^A-Za-z]|$)|(^|[^A-Za-z])THA([^A-Za-z]|$))",
             icon: flagIcon("th")
         },
         {
             name: "TR",
-            regex: "(?i)(土耳其|伊斯坦布尔|🇹🇷|(^|[^A-Za-z])TR([^A-Za-z]|$)|(^|[^A-Za-z])TUR([^A-Za-z]|$)|Turkey|Türkiye|Istanbul)",
+            regex: "(?i)(土耳其|伊斯坦布尔|🇹🇷|(^|[^A-Za-z])TR([^A-Za-z]|$)|(^|[^A-Za-z])TUR([^A-Za-z]|$)|Turkey|Türkiye|Istanbul|Ankara)",
             icon: flagIcon("tr")
         },
         {
             name: "TW",
-            regex: "(?i)(台湾|台灣|台北|新北|台中|高雄|🇹🇼|(^|[^A-Za-z])TW([^A-Za-z]|$)|(^|[^A-Za-z])TWN([^A-Za-z]|$)|Taiwan)",
+            regex: "(?i)(台湾|台灣|台北|新北|台中|高雄|🇹🇼|(^|[^A-Za-z])TW([^A-Za-z]|$)|(^|[^A-Za-z])TWN([^A-Za-z]|$)|Taiwan|Taipei|Kaohsiung|Taichung|Hsinchu)",
             icon: flagIcon("tw")
         },
         {
             name: "US",
-            regex: "(?i)(美国|美國|美西|美东|达拉斯|芝加哥|拉斯维加斯|洛杉矶|洛杉磯|圣何塞|聖何塞|硅谷|矽谷|西雅图|西雅圖|纽约|紐約|🇺🇸|(^|[^A-Za-z])US([^A-Za-z]|$)|(^|[^A-Za-z])USA([^A-Za-z]|$)|United[ -]?States)",
+            regex: "(?i)(美国|美國|美西|美东|达拉斯|芝加哥|拉斯维加斯|洛杉矶|洛杉磯|圣何塞|聖何塞|硅谷|矽谷|西雅图|西雅圖|纽约|紐約|🇺🇸|(^|[^A-Za-z])US([^A-Za-z]|$)|(^|[^A-Za-z])USA([^A-Za-z]|$)|United[ -]?States|Los[ -]?Angeles|San[ -]?Jose|Silicon[ -]?Valley|New[ -]?York|Seattle|Dallas|Chicago|Fremont|Phoenix|Denver|Atlanta|Miami)",
             icon: flagIcon("us")
         },
         {
@@ -347,6 +347,7 @@ function main(params) {
     );
     const usableNames = usableProxies.map(proxy => proxy.name);
 
+    const minRegionNodes = Math.max(1, REGION_MIN_NODES);
     const regionNodeNames = new Map();
     const activeRegions = regions.filter(region => {
         const regex = toJsRegex(region.regex);
@@ -354,7 +355,7 @@ function main(params) {
             .filter(proxy => regex.test(proxy.name))
             .map(proxy => proxy.name);
 
-        if (matched.length >= REGION_MIN_NODES) {
+        if (matched.length >= minRegionNodes) {
             regionNodeNames.set(region.name, matched);
             return true;
         }
@@ -695,9 +696,6 @@ function main(params) {
             typeof subDNS["use-system-hosts"] === "boolean"
                 ? subDNS["use-system-hosts"]
                 : true,
-        ...(isPlainObject(subDNS.hosts)
-            ? { hosts: subDNS.hosts }
-            : {}),
         // 前段为 real-ip 刚需：局域网、NTP、连通性探测、游戏平台（对时拿假地址会失败，连带影响 TLS 校验）
         "fake-ip-filter": [
             ...new Set([
@@ -764,6 +762,15 @@ function main(params) {
             "rule-set:cn-domain": [...CN_DNS_DOH]
         })
     };
+
+    // mihomo 的 hosts 位于顶层而非 dns 下；若订阅误放在 dns.hosts，迁回顶层（顶层已有同名键优先）
+    if (isPlainObject(subDNS.hosts) && Object.keys(subDNS.hosts).length > 0) {
+        params.hosts = Object.assign(
+            {},
+            subDNS.hosts,
+            isPlainObject(params.hosts) ? params.hosts : {}
+        );
+    }
 
     // 远程规则集：MetaCubeX 官方拆分库，全 mrs
     const RS_BASE =
@@ -974,12 +981,12 @@ function main(params) {
             : ["静态", "直连"]
     });
 
-    // 静态：收全部节点（排除 direct / reject 与信息类节点），给不想选地区的人兜底
+    // 静态：收全部节点（排除 direct / reject 与信息类节点），无可用节点时填充 REJECT 占位避免空组报错
     groups.push({
         name: "静态",
         type: "select",
         icon: qureIcon("Static.png"),
-        proxies: usableNames,
+        proxies: usableNames.length > 0 ? usableNames : ["REJECT"],
         "empty-fallback": "REJECT"
     });
 
@@ -1034,10 +1041,10 @@ function main(params) {
         proxies: [...appProxiesList, ...usableNames]
     });
 
-    // 全部节点被 excludeFilter 过滤时「静态」将解析为空并回落 REJECT（需代理的流量全断），转换期能确定，留一条日志
+    // 全部节点被 excludeFilter 过滤时「静态」已填充 REJECT 占位，转换期留一条告警便于排查
     if (usableNames.length === 0) {
         warnLog(
-            "[Clash_rule.js] 订阅节点全部被 excludeFilter 过滤，「静态」组将为空并回落 REJECT，需代理的流量将被拒绝，直连规则不受影响；请检查 excludeFilter 或节点命名。"
+            "[Clash_rule.js] 订阅节点全部被 excludeFilter 过滤，「静态」组已填充 REJECT 占位，需代理的流量将被拒绝，直连规则不受影响；请检查 excludeFilter 或节点命名。"
         );
     }
 
@@ -1070,6 +1077,7 @@ function main(params) {
         "RULE-SET,twitter-domain,X",
         "RULE-SET,tiktok-domain,TikTok",
         "RULE-SET,telegram-domain,Telegram",
+        // Telegram IP 段规则加 no-resolve 避免域名流量中途触发同步 DNS 解析；客户端仍会对真实 IP 匹配兜底
         "RULE-SET,telegram-ip,Telegram,no-resolve",
         "RULE-SET,spotify-domain,Spotify",
         "RULE-SET,ai-domain,AI",

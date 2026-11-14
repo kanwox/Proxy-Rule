@@ -6,13 +6,11 @@ proxy-providers:
     url: "订阅链接填写处"
     interval: 86400
     path: ./all.yaml
-    filter: '(?i)^(?!.*(剩余|官网|套餐|流量|到期|过期|重置|更新|刷新|订阅|时间|地址|有效|通知|本站|群|网址|客服|欢迎|加入|防止|Expire|Traffic|Reset|(^|[^A-Za-z0-9])(\d+(\.\d+)?\s*(GB|TB)|\d+\s*Days?)([^A-Za-z0-9]|$))).*$'
+    benchmark-url: http://www.gstatic.com/generate_204
+    filter: '(?i)^(?!.*(剩余|官网|套餐|已用|到期|过期|重置|更新|刷新|订阅|通知|本站|网址|客服|欢迎|Expire|Traffic|Reset|(剩余|已用|可用|查询|超出|总)流量|流量([:：]|\s*(剩余|已用|可用|重置|耗尽|不足|提醒|查询|统计|清零))|(到期|过期|剩余|重置|更新|刷新|有效)时间|时间[:：]|(官网|最新|发布|永久|备用|防失联|防走丢)地址|地址[:：]|有效期|有效至|(QQ|TG|Telegram|电报|交流|官方|通知|用户)群|群([:：|｜\s]|$)|加群|入群|群聊|群号|群组|群链接|加入(我们|群|TG|电报|频道|Telegram|QQ)|防(失联|走丢)|(^|[^A-Za-z0-9])(\d+\s*Days?|(Data|Used|Left|Remain|Quota)\s*[:：\s]*\d+(\.\d+)?\s*(GB|TB)|\d+(\.\d+)?\s*(GB|TB)\s*/\s*\d+(\.\d+)?\s*(GB|TB))([^A-Za-z0-9]|$))).*$'
 
 dns:
-  enable: true
-  enhanced-mode: fake-ip
   fake-ip-range: 198.18.0.1/16
-  ipv6: true
   # 解析下列加密 DNS 服务器域名用，除 system 外必须是 IP
   default-nameserver:
     - 223.5.5.5
@@ -176,9 +174,9 @@ proxy-groups:
   - name: HK
     type: url-test
     hidden: true
-    icon: https://cdn.jsdmirror.com/gh/HatScripts/circle-flags@gh-pages/flags/hk.svg
+    icon: https://cdn.jsdmirror.com/gh/Koolson/Qure@master/IconSet/Color/HK.png
     use: [All]
-    filter: '(?i)(香港|九龙|🇭🇰|(^|[^A-Za-z])HK([^A-Za-z]|$)|(^|[^A-Za-z])HKG([^A-Za-z]|$)|Hong[ -]?Kong)'
+    filter: '(?i)(香港|九龙|🇭🇰|(^|[^A-Za-z])HK([^A-Za-z]|$)|(^|[^A-Za-z])HKG([^A-Za-z]|$)|Hong[ -]?Kong|Kowloon|Tsuen[ -]?Wan)'
     url: http://www.gstatic.com/generate_204
     interval: 300
     tolerance: 50
@@ -187,9 +185,9 @@ proxy-groups:
   - name: JP
     type: url-test
     hidden: true
-    icon: https://cdn.jsdmirror.com/gh/HatScripts/circle-flags@gh-pages/flags/jp.svg
+    icon: https://cdn.jsdmirror.com/gh/Koolson/Qure@master/IconSet/Color/JP.png
     use: [All]
-    filter: '(?i)(日本|东京|東京|大阪|名古屋|福冈|🇯🇵|(^|[^A-Za-z])JP([^A-Za-z]|$)|(^|[^A-Za-z])JPN([^A-Za-z]|$)|Japan)'
+    filter: '(?i)(日本|东京|東京|大阪|名古屋|福冈|🇯🇵|(^|[^A-Za-z])JP([^A-Za-z]|$)|(^|[^A-Za-z])JPN([^A-Za-z]|$)|Japan|Tokyo|Osaka|Narita|Haneda|Kyoto|Fukuoka|Nagoya|Sapporo)'
     url: http://www.gstatic.com/generate_204
     interval: 300
     tolerance: 50
@@ -198,7 +196,7 @@ proxy-groups:
   - name: SG
     type: url-test
     hidden: true
-    icon: https://cdn.jsdmirror.com/gh/HatScripts/circle-flags@gh-pages/flags/sg.svg
+    icon: https://cdn.jsdmirror.com/gh/Koolson/Qure@master/IconSet/Color/SG.png
     use: [All]
     filter: '(?i)(新加坡|狮城|獅城|🇸🇬|(^|[^A-Za-z])SG([^A-Za-z]|$)|(^|[^A-Za-z])SGP([^A-Za-z]|$)|Singapore)'
     url: http://www.gstatic.com/generate_204
@@ -209,9 +207,9 @@ proxy-groups:
   - name: TW
     type: url-test
     hidden: true
-    icon: https://cdn.jsdmirror.com/gh/HatScripts/circle-flags@gh-pages/flags/tw.svg
+    icon: https://cdn.jsdmirror.com/gh/Koolson/Qure@master/IconSet/Color/TW.png
     use: [All]
-    filter: '(?i)(台湾|台灣|台北|新北|台中|高雄|🇹🇼|(^|[^A-Za-z])TW([^A-Za-z]|$)|(^|[^A-Za-z])TWN([^A-Za-z]|$)|Taiwan)'
+    filter: '(?i)(台湾|台灣|台北|新北|台中|高雄|🇹🇼|(^|[^A-Za-z])TW([^A-Za-z]|$)|(^|[^A-Za-z])TWN([^A-Za-z]|$)|Taiwan|Taipei|Kaohsiung|Taichung|Hsinchu)'
     url: http://www.gstatic.com/generate_204
     interval: 300
     tolerance: 50
@@ -220,9 +218,9 @@ proxy-groups:
   - name: US
     type: url-test
     hidden: true
-    icon: https://cdn.jsdmirror.com/gh/HatScripts/circle-flags@gh-pages/flags/us.svg
+    icon: https://cdn.jsdmirror.com/gh/Koolson/Qure@master/IconSet/Color/US.png
     use: [All]
-    filter: '(?i)(美国|美國|美西|美东|达拉斯|芝加哥|拉斯维加斯|洛杉矶|洛杉磯|圣何塞|聖何塞|硅谷|矽谷|西雅图|西雅圖|纽约|紐約|🇺🇸|(^|[^A-Za-z])US([^A-Za-z]|$)|(^|[^A-Za-z])USA([^A-Za-z]|$)|United[ -]?States)'
+    filter: '(?i)(美国|美國|美西|美东|达拉斯|芝加哥|拉斯维加斯|洛杉矶|洛杉磯|圣何塞|聖何塞|硅谷|矽谷|西雅图|西雅圖|纽约|紐約|🇺🇸|(^|[^A-Za-z])US([^A-Za-z]|$)|(^|[^A-Za-z])USA([^A-Za-z]|$)|United[ -]?States|Los[ -]?Angeles|San[ -]?Jose|Silicon[ -]?Valley|New[ -]?York|Seattle|Dallas|Chicago|Fremont|Phoenix|Denver|Atlanta|Miami)'
     url: http://www.gstatic.com/generate_204
     interval: 300
     tolerance: 50
@@ -394,13 +392,14 @@ rules:
   - IP-CIDR6,::/128,REJECT,no-resolve
   - RULE-SET,private-domain,DIRECT
   - RULE-SET,lan-cidr,DIRECT,no-resolve
-  - RULE-SET,ads-domain,REJECT,pre-matching
+  - RULE-SET,ads-domain,REJECT
   - RULE-SET,synology-domain,DIRECT
   - AND,((DST-PORT,123),(NETWORK,udp)),DIRECT
   - RULE-SET,youtube-domain,YouTube
   - RULE-SET,twitter-domain,X
   - RULE-SET,tiktok-domain,TikTok
   - RULE-SET,telegram-domain,Telegram
+  # Telegram IP 段规则加 no-resolve 避免域名流量中途触发同步 DNS 解析；客户端仍会对真实 IP 匹配兜底
   - RULE-SET,telegram-ip,Telegram,no-resolve
   - RULE-SET,spotify-domain,Spotify
   - RULE-SET,ai-domain,AI

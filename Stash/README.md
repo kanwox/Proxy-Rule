@@ -1,6 +1,6 @@
 # Stash
 
-适用于 Stash 客户端（iOS / iPadOS / macOS / tvOS）。
+适用于 Stash 客户端（iOS 3.6+ / iPadOS 3.6+ / macOS 4.3+ / tvOS）。
 
 ---
 

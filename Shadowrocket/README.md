@@ -1,6 +1,6 @@
 # Shadowrocket
 
-适用于 Shadowrocket 客户端（iOS / macOS / tvOS）。
+适用于 Shadowrocket 客户端（iOS 2.2.66 (2649)+ / macOS / tvOS）。
 
 ---
 

@@ -56,7 +56,7 @@
 13 大独立业务组 (可任意指定主代理 / 地区组 / 直连 / 具体节点)
 ├─ 常用平台：Google · Apple · Microsoft · GitHub · Telegram · X · YouTube · TikTok · Spotify · Steam · PayPal
 ├─ 人工智能：AI (ChatGPT · Claude · Gemini)
-└─ 流媒体聚合：TV (Netflix · Disney+ · HBO · Prime Video · Apple TV+)
+└─ 流媒体聚合：TV (Netflix · Disney+ · HBO · Prime Video · Apple 媒体服务（Clash / Stash 仅分流 Apple TV+）)
 
 分流流水线
 防止代理回环 ➜ 局域网/私网 ➜ 广告拦截 ➜ NAS/NTP对时直连 ➜ 核心应用分流 ➜ 海外常用服务 ➜ 大陆域名/IP直连 ➜ 兜底组 (主代理)

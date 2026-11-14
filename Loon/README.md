@@ -1,6 +1,6 @@
 # Loon
 
-适用于 Loon 客户端（iOS / macOS / tvOS）。
+适用于 Loon 客户端（iOS 3.1.7+ / macOS / tvOS）。
 
 ---
 

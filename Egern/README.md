@@ -1,6 +1,6 @@
 # Egern
 
-适用于 Egern 客户端（iOS / macOS / tvOS）。
+适用于 Egern 客户端（iOS / iPadOS）。
 
 ---
 
@@ -34,5 +34,5 @@
 ## ✨ 核心特性
 
 - **原生 YAML**：基于 Egern 原生规范组织分流与策略。
-- **Smart 选优**：各地区组通过 `flatten` 展开节点，采用 `smart` 健康检查择优。
+- **Smart 选优**：各地区组通过 `flatten` 展开节点，采用 `smart` 策略自动择优。
 - **规则集**：引用 Egern 专用 YAML 规则集，分流对齐主流服务与国内直连。
