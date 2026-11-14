@@ -113,8 +113,8 @@ function main(params) {
     const qureIcon = name => `${QURE_ICON_BASE}/${name}`;
 
     const FLAG_ICON_BASE =
-        "https://cdn.jsdmirror.com/gh/HatScripts/circle-flags@gh-pages/flags";
-    const flagIcon = code => `${FLAG_ICON_BASE}/${code}.svg`;
+        "https://cdn.jsdmirror.com/gh/open-assets-hub/country-flag-collection@main/circle/128";
+    const flagIcon = code => `${FLAG_ICON_BASE}/${code}.png`;
 
     // 地区表。regex 仅在 JS 侧经 toJsRegex 转换使用
     const regions = [

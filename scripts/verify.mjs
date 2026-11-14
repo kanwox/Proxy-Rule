@@ -93,40 +93,40 @@ const stash = readUtf8("Stash/Stash.yaml");
 const egern = readUtf8("Egern/Egern.yaml");
 const clashJs = readUtf8("Clash/Clash_rule.js");
 
-check("surge: 保留 FINAL dns-failed、pre-matching 与 Qure PNG 地区图标", () => {
+const FLAG_ICON_BASE =
+    "https://cdn.jsdmirror.com/gh/open-assets-hub/country-flag-collection@main/circle/128";
+const CORE_FLAG_CODES = ["hk", "jp", "sg", "tw", "us"];
+
+function assertCirclePngFlags(content, client) {
+    for (const code of CORE_FLAG_CODES) {
+        assert.ok(
+            content.includes(`${FLAG_ICON_BASE}/${code}.png`),
+            `${client} 缺少 ${code}.png 地区图标`
+        );
+        assert.ok(
+            !content.includes(`Koolson/Qure@master/IconSet/Color/${code.toUpperCase()}.png`),
+            `${client} 仍残留旧 Qure ${code.toUpperCase()}.png 地区图标`
+        );
+    }
+    assert.ok(!content.includes("circle-flags"), `${client} 仍残留 circle-flags`);
+}
+
+check("surge: 保留 FINAL dns-failed、pre-matching 与 circle/128 PNG 地区图标", () => {
     assert.match(surge, /^FINAL,兜底,dns-failed$/m);
     assert.match(surge, /REJECT,pre-matching(?:,|$)/m);
-    for (const code of ["HK", "JP", "SG", "TW", "US"]) {
-        assert.ok(
-            surge.includes(`Koolson/Qure@master/IconSet/Color/${code}.png`),
-            `Surge 缺少 ${code}.png 图标`
-        );
-    }
-    assert.ok(!surge.includes("circle-flags"), "Surge 仍残留 circle-flags");
+    assertCirclePngFlags(surge, "Surge");
 });
 
-check("surfboard: FINAL 已移除 dns-failed 并使用 Qure PNG 地区图标", () => {
+check("surfboard: FINAL 已移除 dns-failed 并使用 circle/128 PNG 地区图标", () => {
     assert.match(surfboard, /^FINAL,兜底$/m);
     assert.ok(!surfboard.includes("dns-failed"), "Surfboard 不应包含 dns-failed");
-    for (const code of ["HK", "JP", "SG", "TW", "US"]) {
-        assert.ok(
-            surfboard.includes(`Koolson/Qure@master/IconSet/Color/${code}.png`),
-            `Surfboard 缺少 ${code}.png 图标`
-        );
-    }
-    assert.ok(!surfboard.includes("circle-flags"), "Surfboard 仍残留 circle-flags");
+    assertCirclePngFlags(surfboard, "Surfboard");
 });
 
-check("loon: FINAL 已移除 dns-failed 并使用 Qure PNG 地区图标", () => {
+check("loon: FINAL 已移除 dns-failed 并使用 circle/128 PNG 地区图标", () => {
     assert.match(loon, /^FINAL,兜底$/m);
     assert.ok(!loon.includes("dns-failed"), "Loon 不应包含 dns-failed");
-    for (const code of ["HK", "JP", "SG", "TW", "US"]) {
-        assert.ok(
-            loon.includes(`Koolson/Qure@master/IconSet/Color/${code}.png`),
-            `Loon 缺少 ${code}.png 图标`
-        );
-    }
-    assert.ok(!loon.includes("circle-flags"), "Loon 仍残留 circle-flags");
+    assertCirclePngFlags(loon, "Loon");
 });
 
 check("shadowrocket: 移除 policy-regex-filter 引号、修复 DST-PORT 与 FINAL", () => {
@@ -142,23 +142,17 @@ check("shadowrocket: 移除 policy-regex-filter 引号、修复 DST-PORT 与 FIN
     assert.ok(!shadowrocket.includes("DEST-PORT"), "Shadowrocket 不应残留 DEST-PORT");
 });
 
-check("quantumultx: [dns] 单行双 IP DoH、移除无效 server= 与 Qure PNG 图标", () => {
+check("quantumultx: [dns] 单行双 IP DoH、移除无效 server= 与 circle/128 PNG 图标", () => {
     const dnsSection = qx.slice(qx.indexOf("\n[dns]\n"), qx.indexOf("\n[server_remote]\n"));
     assert.ok(!/^\s*server\s*=/m.test(dnsSection), "QX [dns] 不应保留被 doh-server 覆盖的 server=");
     assert.match(
         dnsSection,
         /^doh-server = https:\/\/223\.5\.5\.5\/dns-query, https:\/\/1\.12\.12\.12\/dns-query$/m
     );
-    for (const code of ["HK", "JP", "SG", "TW", "US"]) {
-        assert.ok(
-            qx.includes(`Koolson/Qure@master/IconSet/Color/${code}.png`),
-            `QX 缺少 ${code}.png 图标`
-        );
-    }
-    assert.ok(!qx.includes("circle-flags"), "QX 仍残留 circle-flags");
+    assertCirclePngFlags(qx, "QX");
 });
 
-check("stash: provider benchmark-url、移除无效 dns 字段与 pre-matching、Qure PNG 图标", () => {
+check("stash: provider benchmark-url、移除无效 dns 字段与 pre-matching、circle/128 PNG 图标", () => {
     assert.match(stash, /^\s{4}benchmark-url:\s*http:\/\/www\.gstatic\.com\/generate_204$/m);
     const dnsBlock = stash.slice(stash.indexOf("\ndns:\n"), stash.indexOf("\nsniffer:\n"));
     assert.ok(!/^\s+enable:/m.test(dnsBlock), "Stash dns 不应包含 enable");
@@ -166,25 +160,13 @@ check("stash: provider benchmark-url、移除无效 dns 字段与 pre-matching�
     assert.ok(!/^\s+ipv6:/m.test(dnsBlock), "Stash dns 不应包含 ipv6");
     assert.ok(!stash.includes("pre-matching"), "Stash 不应使用 beta 的 pre-matching");
     assert.match(stash, /-\s+RULE-SET,telegram-ip,Telegram,no-resolve$/m);
-    for (const code of ["HK", "JP", "SG", "TW", "US"]) {
-        assert.ok(
-            stash.includes(`Koolson/Qure@master/IconSet/Color/${code}.png`),
-            `Stash 缺少 ${code}.png 图标`
-        );
-    }
-    assert.ok(!stash.includes("circle-flags"), "Stash 仍残留 circle-flags");
+    assertCirclePngFlags(stash, "Stash");
 });
 
-check("egern: 13 业务组与兜底组策略顺序一致、Qure PNG 图标", () => {
+check("egern: 13 业务组与兜底组策略顺序一致、circle/128 PNG 图标", () => {
     const policyBlocks = egern.match(/policies:\s*\[主代理, DIRECT, HK, JP, SG, TW, US, 静态\]/g) || [];
     assert.equal(policyBlocks.length, 14, "Egern 13 个业务组 + 兜底组应全部使用 [主代理, DIRECT, ..., 静态]");
-    for (const code of ["HK", "JP", "SG", "TW", "US"]) {
-        assert.ok(
-            egern.includes(`Koolson/Qure@master/IconSet/Color/${code}.png`),
-            `Egern 缺少 ${code}.png 图标`
-        );
-    }
-    assert.ok(!egern.includes("circle-flags"), "Egern 仍残留 circle-flags");
+    assertCirclePngFlags(egern, "Egern");
 });
 
 // 3. README 版本与平台说明一致性检查
@@ -488,6 +470,22 @@ check("clash-runtime: 23 个地区扩展城市与印度尼西亚防误匹配", (
     assert.deepEqual(byRegion.get("KR"), ["Seoul 01"]);
     assert.deepEqual(byRegion.get("MY"), ["Kuala Lumpur 01"]);
     assert.deepEqual(byRegion.get("BR"), ["São Paulo 01"]);
+    assert.ok(!clashJs.includes("circle-flags"), "Clash_rule.js 不应残留 circle-flags");
+    for (const g of out["proxy-groups"]) {
+        if (g.type === "url-test") {
+            assert.equal(
+                g.icon,
+                `${FLAG_ICON_BASE}/${g.name.toLowerCase()}.png`,
+                `Clash 地区组 ${g.name} 图标未使用 circle/128 PNG`
+            );
+        } else {
+            assert.ok(
+                g.icon.startsWith("https://cdn.jsdmirror.com/gh/Koolson/Qure@master/IconSet/Color/") &&
+                    g.icon.endsWith(".png"),
+                `Clash 非地区组 ${g.name} 应保留 Qure PNG 图标`
+            );
+        }
+    }
 });
 
 console.log(`\nSummary: ${passed} passed, ${failed} failed`);
