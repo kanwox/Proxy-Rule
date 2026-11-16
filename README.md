@@ -9,7 +9,7 @@
 一套面向现代代理客户端的高性能分流规则库
 
 [![Clash](https://img.shields.io/badge/Clash-5B8DEF?logo=github&logoColor=white)](./Clash/)
-[![Concord](https://img.shields.io/badge/Concord-6E56CF?logo=rust&logoColor=white)](./Concord/)
+[![Concord](https://img.shields.io/badge/Concord-5B8DEF?logo=github&logoColor=white)](./Concord/)
 [![Egern](https://img.shields.io/badge/Egern-0EA5E9?logo=apple&logoColor=white)](./Egern/)
 [![Loon](https://img.shields.io/badge/Loon-4B7BEC?logo=apple&logoColor=white)](./Loon/)
 [![Quantumult X](https://img.shields.io/badge/Quantumult%20X-7C3AED?logo=apple&logoColor=white)](./QuantumultX/)

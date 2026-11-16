@@ -43,6 +43,8 @@
 
 Concord 读取 Clash/mihomo 配置，但把字段分成「支持 / 忽略并告警 / 未知」三档，并会在遇到非法字段、悬空引用或错误规则时**直接拒绝整份配置**。因此本脚本相比 [Clash_rule.js](../Clash/Clash_rule.js) 多了一层清洗逻辑：
 
+<div align="center">
+
 | 项目 | 处理方式 |
 | :--- | :--- |
 | 顶层字段 | 只输出 Concord 读取的字段；`external-controller`、`secret`、`sub-rules` 不输出 |
@@ -57,6 +59,8 @@ Concord 读取 Clash/mihomo 配置，但把字段分成「支持 / 忽略并告�
 | `experimental` / `tls` | 只继承内核真正读取的键（`fingerprints`、`dialer-ip4p-convert`、`custom-certifactes`），会告警的键不输出 |
 | `dns` 上游 | 订阅的 `nameserver` / `default-nameserver` / `proxy-server-nameserver` / `direct-nameserver` / `fallback` 优先继承，未设置才用脚本默认 |
 | `ipv6` | **默认开启**，仅当订阅显式设为 `false` 时关闭 |
+
+</div>
 
 ---
 
