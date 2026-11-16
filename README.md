@@ -9,6 +9,7 @@
 一套面向现代代理客户端的高性能分流规则库
 
 [![Clash](https://img.shields.io/badge/Clash-5B8DEF?logo=github&logoColor=white)](./Clash/)
+[![Concord](https://img.shields.io/badge/Concord-6E56CF?logo=rust&logoColor=white)](./Concord/)
 [![Egern](https://img.shields.io/badge/Egern-0EA5E9?logo=apple&logoColor=white)](./Egern/)
 [![Loon](https://img.shields.io/badge/Loon-4B7BEC?logo=apple&logoColor=white)](./Loon/)
 [![Quantumult X](https://img.shields.io/badge/Quantumult%20X-7C3AED?logo=apple&logoColor=white)](./QuantumultX/)
@@ -29,6 +30,7 @@
 | 客户端 | 直达链接 | 镜像链接 |
 | :---: | :---: | :---: |
 | **Clash / Mihomo** | [查看原件](https://raw.githubusercontent.com/kanwox/Proxy-Rule/main/Clash/Clash_rule.js) | `https://cdn.jsdmirror.com/gh/kanwox/Proxy-Rule@main/Clash/Clash_rule.js` |
+| **Concord** | [查看原件](https://raw.githubusercontent.com/kanwox/Proxy-Rule/main/Concord/Concord_rule.js) | `https://cdn.jsdmirror.com/gh/kanwox/Proxy-Rule@main/Concord/Concord_rule.js` |
 | **Egern** | [查看原件](https://raw.githubusercontent.com/kanwox/Proxy-Rule/main/Egern/Egern.yaml) | `https://cdn.jsdmirror.com/gh/kanwox/Proxy-Rule@main/Egern/Egern.yaml` |
 | **Loon** | [查看原件](https://raw.githubusercontent.com/kanwox/Proxy-Rule/main/Loon/Loon.conf) | `https://cdn.jsdmirror.com/gh/kanwox/Proxy-Rule@main/Loon/Loon.conf` |
 | **Quantumult X** | [查看原件](https://raw.githubusercontent.com/kanwox/Proxy-Rule/main/QuantumultX/QuantumultX.conf) | `https://cdn.jsdmirror.com/gh/kanwox/Proxy-Rule@main/QuantumultX/QuantumultX.conf` |
@@ -63,7 +65,7 @@
 ```
 
 - **真实 IP 白名单**：网络对时 (NTP)、STUN 探测、系统连通性测试及游戏联机直连走真实 IP，避免 Fake-IP 带来连通性异常。
-- **分层广告防护**：Mihomo、Loon 与 Quantumult X 支持 DNS 层面拒绝；各端均保留规则层 `REJECT`，Surge 与 Shadowrocket 开启预匹配优化。
+- **分层广告防护**：Mihomo、Concord、Loon 与 Quantumult X 支持 DNS 层面拒绝；各端均保留规则层 `REJECT`，Surge 与 Shadowrocket 开启预匹配优化。
 - **远程规则托管**：主流平台业务规则与群晖服务规则集支持自动定期拉取更新，保持长期低维护可用。
 
 ---
