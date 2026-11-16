@@ -33,7 +33,8 @@
 - **自动分组**：覆盖 23 个国家/地区，同地区节点 ≥2 个自动创建测速组（`url-test`）。
 - **配置自生成**：订阅只提供节点，策略组、规则集、规则、DNS、嗅探由脚本生成，天然不含内核会告警的字段。
 - **节点净化**：剔除内核不支持的节点类型 / 传输 / 插件，改写废弃指纹，自动过滤流量、到期等提示节点，重名自动编号。
-- **引用修复**：清理悬空的 `dialer-proxy`，避免内核因悬空引用拒绝整份配置。
+- **双层校验**：镜像内核的配置解析期与构建期校验，提前剔除缺失必填字段、非法密码/密钥、错误协议组合等会让内核拒绝整份配置或静默隔离节点的条目；可修复的键值（大小写/下划线变体）自动规范化。
+- **引用修复**：清理悬空与成环的 `dialer-proxy`，避免内核因此拒绝整份配置。
 - **连接嗅探**：启用 HTTP/TLS/QUIC 嗅探与 `parse-pure-ip`，还原真实域名分流。
 - **DNS 优化**：Fake-IP 分流，国内 DoH 解析，广告域名 DNS 层直接拒答。
 
@@ -41,7 +42,7 @@
 
 ## 🔍 与 Clash 版的差异
 
-Concord 读取 Clash/mihomo 配置，但把字段分成「支持 / 忽略并告警 / 未知」三档，并会在遇到非法字段、悬空引用或错误规则时**直接拒绝整份配置**。因此本脚本相比 [Clash_rule.js](../Clash/Clash_rule.js) 多了一层清洗逻辑：
+Concord 读取 Clash/mihomo 配置，但把字段分成「支持 / 忽略并告警 / 未知」三档，并会在遇到非法字段、悬空引用或错误规则时**直接拒绝整份配置**；节点级的非法选项则会让节点被隔离（组引用它时拒绝连接）。因此本脚本相比 [Clash_rule.js](../Clash/Clash_rule.js) 多了一层清洗逻辑：
 
 <div align="center">
 
@@ -50,10 +51,12 @@ Concord 读取 Clash/mihomo 配置，但把字段分成「支持 / 忽略并告�
 | 订阅的角色 | 只提供节点；策略组、规则集、规则、DNS、嗅探全部由脚本生成 |
 | 节点类型 | 只保留内核支持的 18 种；`tailscale` / `openvpn` / `masque` 等会被剔除 |
 | 节点选项 | `shadow-tls-opts` / `restls-opts` / `jls-opts` / `tlsmirror-opts`、SS 插件 `restls` / `kcptun` 等连同节点一并剔除 |
-| 废弃指纹 | `chrome_psk` / `randomized` 等改写为 `chrome` / `random` |
-| `dialer-proxy` | 指向不存在节点或策略组时移除该字段 |
+| 键名规范化 | 节点键的大小写 / 下划线变体（如 `ws_opts`、`type: SS`）自动折叠为内核接受的形式 |
+| 必填与格式 | 缺失必填字段、非法端口、非法密码/密钥格式、错误协议组合的节点直接剔除，避免内核拒绝整份配置 |
+| 废弃指纹 | `chrome_psk` / `randomized` 等（大小写不敏感）改写为 `chrome` / `random`，仅处理 `client-fingerprint` |
+| `dialer-proxy` | 指向不存在节点或策略组时移除该字段；成环（含自环）时断开环保住节点 |
 | 订阅的其他段 | `dns` / `tun` / `sniffer` / `ntp` / `experimental` / `tls` / `geox-url` 等不继承，由脚本生成或交给客户端默认 |
-| `tun` / `hosts` | 仅继承 `tun.enable`；`hosts` 过滤内核不接受的条目 |
+| `tun` / `hosts` | 仅继承 `tun.enable`；`hosts` 过滤非法值（对象 / `null` / 含 `lan` / 多值非全 IP）与域名映射环 |
 | `ipv6` | **默认开启**，仅当订阅显式设为 `false` 时关闭 |
 
 </div>
