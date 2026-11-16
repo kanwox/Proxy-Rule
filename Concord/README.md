@@ -31,9 +31,9 @@
 ## ✨ 核心特性
 
 - **自动分组**：覆盖 23 个国家/地区，同地区节点 ≥2 个自动创建测速组（`url-test`）。
-- **字段清洗**：按 Concord 的字段白名单裁剪订阅，剔除内核会告警的 T2 字段与未知字段。
+- **配置自生成**：订阅只提供节点，策略组、规则集、规则、DNS、嗅探由脚本生成，天然不含内核会告警的字段。
 - **节点净化**：剔除内核不支持的节点类型 / 传输 / 插件，改写废弃指纹，自动过滤流量、到期等提示节点，重名自动编号。
-- **引用修复**：清理悬空的 `dialer-proxy` 与 DNS `#目标`，避免内核因悬空引用拒绝整份配置。
+- **引用修复**：清理悬空的 `dialer-proxy`，避免内核因悬空引用拒绝整份配置。
 - **连接嗅探**：启用 HTTP/TLS/QUIC 嗅探与 `parse-pure-ip`，还原真实域名分流。
 - **DNS 优化**：Fake-IP 分流，国内 DoH 解析，广告域名 DNS 层直接拒答。
 
@@ -47,17 +47,13 @@ Concord 读取 Clash/mihomo 配置，但把字段分成「支持 / 忽略并告�
 
 | 项目 | 处理方式 |
 | :--- | :--- |
-| 顶层字段 | 只输出 Concord 读取的字段；`external-controller`、`secret`、`sub-rules` 不输出 |
-| `geodata-mode` 等 T2 字段 | 一律不输出（内核会忽略并告警） |
+| 订阅的角色 | 只提供节点；策略组、规则集、规则、DNS、嗅探全部由脚本生成 |
 | 节点类型 | 只保留内核支持的 18 种；`tailscale` / `openvpn` / `masque` 等会被剔除 |
 | 节点选项 | `shadow-tls-opts` / `restls-opts` / `jls-opts` / `tlsmirror-opts`、SS 插件 `restls` / `kcptun` 等连同节点一并剔除 |
 | 废弃指纹 | `chrome_psk` / `randomized` 等改写为 `chrome` / `random` |
-| `dialer-proxy` | 指向不存在节点时移除该字段 |
-| `dns` | `default-nameserver` 强制纯 IP；`listen` 不输出；`fake-ip-filter` / `nameserver-policy` 只继承合法的域名条目；悬空 `#目标` 修正为 `#RULES` |
-| `tun` | 删除内核不生效的 `gso`；`stack` 为 `mixed` / `system` 时不输出，交回客户端默认值 |
-| `hosts` | 删除值为 `lan` 的条目与非法域名 |
-| `experimental` / `tls` | 只继承内核真正读取的键（`fingerprints`、`dialer-ip4p-convert`、`custom-certifactes`），会告警的键不输出 |
-| `dns` 上游 | 订阅的 `nameserver` / `default-nameserver` / `proxy-server-nameserver` / `direct-nameserver` / `fallback` 优先继承，未设置才用脚本默认 |
+| `dialer-proxy` | 指向不存在节点或策略组时移除该字段 |
+| 订阅的其他段 | `dns` / `tun` / `sniffer` / `ntp` / `experimental` / `tls` / `geox-url` 等不继承，由脚本生成或交给客户端默认 |
+| `tun` / `hosts` | 仅继承 `tun.enable`；`hosts` 过滤内核不接受的条目 |
 | `ipv6` | **默认开启**，仅当订阅显式设为 `false` 时关闭 |
 
 </div>

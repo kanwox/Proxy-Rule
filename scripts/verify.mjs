@@ -577,7 +577,7 @@ check("concord-runtime: 剔除不支持的节点类型、传输与插件", () =>
     });
     const names = out.proxies.map(p => p.name);
     assert.deepEqual(names, ["香港 01"], "不支持的节点应全部剔除，实际: " + names.join(","));
-    assert.ok(warnings.some(w => w.includes("已剔除")), "应发出剔除告警");
+    assert.equal(warnings.length, 0, "默认应完全静默，实际输出: " + warnings.join("; "));
 });
 
 check("concord-runtime: 改写废弃指纹并补全 ip-version", () => {
@@ -597,43 +597,41 @@ check("concord-runtime: 改写废弃指纹并补全 ip-version", () => {
     }
 });
 
-check("concord-runtime: DNS 硬约束（default-nameserver 纯 IP、无 listen、策略仅域名键）", () => {
+check("concord-runtime: DNS 全部由脚本生成，不继承订阅的同名段", () => {
     const { main } = loadConcordMain();
     const out = main({
         proxies: [{ name: "HK 01", type: "ss", server: "1.1.1.1", port: 443, cipher: "aes-128-gcm", password: "p" }],
         dns: {
             listen: "0.0.0.0:53",
-            nameserver: ["https://1.1.1.1/dns-query", "ts://bad", "https://8.8.8.8/dns-query#不存在的组"],
-            "fake-ip-filter": ["+.corp.lan", "geosite:cn", "rule-set:x"],
-            "nameserver-policy": { "geosite:cn": ["223.5.5.5"], "+.corp.example": ["10.1.1.1"], "+.": ["1.1.1.1"] }
+            nameserver: ["ts://bad"],
+            "default-nameserver": ["2400:3200::1"],
+            "fake-ip-filter": ["geosite:cn"]
         }
     });
     assert.equal(out.dns.listen, undefined, "dns.listen 不应输出");
     for (const server of out.dns["default-nameserver"]) {
-        assert.match(server, /^(\d{1,3}\.){3}\d{1,3}$/, "default-nameserver 必须是纯 IP: " + server);
+        assert.match(server, /^(\d{1,3}\.){3}\d{1,3}$/, "引导 DNS 必须是纯 IP: " + server);
     }
-    assert.ok(!out.dns.nameserver.some(ns => ns.startsWith("ts://")), "不支持的 DNS scheme 应被丢弃");
-    assert.ok(!out.dns.nameserver.some(ns => ns.includes("#不存在的组")), "悬空 #目标 应被修正");
-    assert.ok(out.dns["fake-ip-filter"].includes("+.corp.lan"));
-    assert.ok(!out.dns["fake-ip-filter"].includes("geosite:cn"), "订阅的 geosite 条目不应继承");
-    assert.ok(!out.dns["fake-ip-filter"].includes("rule-set:x"), "订阅的 rule-set 条目不应继承");
-    assert.equal(out.dns["nameserver-policy"]["+."], undefined, "通吃键不应继承");
-    assert.equal(out.dns["nameserver-policy"]["geosite:cn"], undefined, "集合键不应继承");
-    assert.ok(out.dns["nameserver-policy"]["+.corp.example"], "域名键应继承");
+    assert.ok(!out.dns.nameserver.some(ns => ns.startsWith("ts://")), "订阅的非法上游不应进入输出");
+    assert.deepEqual(out.dns["nameserver-policy"]["rule-set:ads-domain"], ["rcode://name_error"]);
+    assert.equal(out.dns["enhanced-mode"], "fake-ip", "分流依赖 fake-ip 还原域名");
 });
 
-check("concord-runtime: tun 删除 gso 与 mixed/system 栈，hosts 删除 lan", () => {
+check("concord-runtime: tun 只继承开关，hosts 过滤内核不接受的条目", () => {
     const { main } = loadConcordMain();
     const out = main({
         proxies: [{ name: "HK 01", type: "ss", server: "1.1.1.1", port: 443, cipher: "aes-128-gcm", password: "p" }],
         tun: { enable: true, stack: "mixed", gso: true, "dns-mode": "hijack", mtu: 9000 },
         hosts: { "router.lan": "192.168.1.1", "bad.lan": "lan", "bad entry": "1.2.3.4" }
     });
-    assert.equal(out.tun.gso, undefined, "tun.gso 不应输出");
-    assert.equal(out.tun["dns-mode"], undefined, "tun.dns-mode 不应输出");
-    assert.equal(out.tun.stack, undefined, "mixed 栈应不输出，由客户端默认值决定");
-    assert.equal(out.tun.mtu, 9000, "支持的 tun 字段应保留");
+    // 栈与 MTU 由客户端按平台决定，脚本只传递开关
+    assert.deepEqual(out.tun, { enable: true });
     assert.deepEqual(out.hosts, { "router.lan": "192.168.1.1" });
+
+    const noTun = main({
+        proxies: [{ name: "HK 01", type: "ss", server: "1.1.1.1", port: 443, cipher: "aes-128-gcm", password: "p" }]
+    });
+    assert.equal(noTun.tun, undefined, "订阅未声明 tun 时不输出该段");
 });
 
 check("concord-runtime: 清理悬空 dialer-proxy 与空组兜底", () => {
@@ -645,7 +643,7 @@ check("concord-runtime: 清理悬空 dialer-proxy 与空组兜底", () => {
         ]
     });
     assert.equal(out.proxies.find(p => p.name === "A")["dialer-proxy"], undefined);
-    assert.ok(warnings.some(w => w.includes("dialer-proxy")));
+    assert.equal(warnings.length, 0, "默认应完全静默");
 
     const empty = main({ proxies: [] });
     const staticGroup = empty["proxy-groups"].find(g => g.name === "静态");
@@ -704,38 +702,81 @@ check("concord-runtime: IPv6 默认开启，订阅显式 false 才关闭", () =>
     assert.equal(off.dns["fake-ip-range6"], undefined);
 });
 
-check("concord-runtime: experimental/tls 只继承内核读取的键", () => {
+check("concord-runtime: 生成配置只含内核读取的字段，订阅的非分流段不输出", () => {
     const { main } = loadConcordMain();
     const out = main({
         proxies: [{ name: "HK 01", type: "ss", server: "1.1.1.1", port: 443, cipher: "aes-128-gcm", password: "p" }],
-        experimental: { fingerprints: { a: "b" }, "dialer-ip4p-convert": true, "quic-go-disable-gso": true, "quic-go-disable-ecn": false },
-        tls: { "custom-certifactes": ["c"], certificate: "cert", "private-key": "key", "ech-key": "k" }
+        mode: "bogus",
+        "log-level": "bogus",
+        experimental: { fingerprints: { a: "b" }, "quic-go-disable-gso": true },
+        tls: { "custom-certifactes": ["c"], certificate: "cert" },
+        ntp: { port: "abc", server: "time.apple.com" },
+        "geox-url": { mmdb: 123 }
     });
-    assert.deepEqual(out.experimental, { fingerprints: { a: "b" }, "dialer-ip4p-convert": true });
-    assert.deepEqual(out.tls, { "custom-certifactes": ["c"] });
+    // 这些段与分流无关，交给客户端默认，不继承订阅值
+    assert.equal(out.mode, undefined);
+    assert.equal(out["log-level"], undefined);
+    assert.equal(out.experimental, undefined);
+    assert.equal(out.tls, undefined);
+    assert.equal(out.ntp, undefined);
+    assert.equal(out["geox-url"], undefined);
 });
 
-check("concord-runtime: 订阅 DNS 上游优先继承，未设置才用脚本默认", () => {
+check("concord-runtime: 订阅 DNS 段不继承，输出为脚本生成", () => {
     const { main } = loadConcordMain();
     const out = main({
         proxies: [{ name: "HK 01", type: "ss", server: "1.1.1.1", port: 443, cipher: "aes-128-gcm", password: "p" }],
         dns: {
-            "default-nameserver": ["1.2.3.4", "dns.google"],
-            "proxy-server-nameserver": ["https://9.9.9.9/dns-query"],
-            "direct-nameserver": ["180.76.76.76"],
-            fallback: ["https://8.8.4.4/dns-query"],
-            "fallback-filter": { geoip: true, "geoip-code": "CN" }
+            "default-nameserver": ["1.2.3.4", "dns.google", "2400:3200::1"],
+            nameserver: ["2400:3200::1", "ts://bad"],
+            fallback: ["https://8.8.4.4/dns-query"]
         }
     });
-    assert.deepEqual(out.dns["default-nameserver"], ["1.2.3.4"], "非纯 IP 引导 DNS 应被过滤");
-    assert.deepEqual(out.dns["proxy-server-nameserver"], ["https://9.9.9.9/dns-query"]);
-    assert.deepEqual(out.dns["direct-nameserver"], ["180.76.76.76"]);
-    assert.deepEqual(out.dns.fallback, ["https://8.8.4.4/dns-query"]);
-    assert.equal(out.dns["fallback-filter"]["geoip-code"], "CN");
+    assert.deepEqual(out.dns["default-nameserver"], ["223.5.5.5", "119.29.29.29"], "引导 DNS 由脚本固定");
+    assert.equal(out.dns.fallback, undefined, "订阅 fallback 不继承");
+    assert.ok(!out.dns.nameserver.some(ns => ns.startsWith("ts://")));
+    assert.ok(!out.dns.nameserver.some(ns => ns.includes("2400:3200::1")));
+});
 
-    const fallback = main({ proxies: [{ name: "HK 01", type: "ss", server: "1.1.1.1", port: 443, cipher: "aes-128-gcm", password: "p" }] });
-    assert.deepEqual(fallback.dns["default-nameserver"], ["223.5.5.5", "119.29.29.29"]);
-    assert.equal(fallback.dns.fallback, undefined, "订阅无 fallback 时不输出");
+check("concord-runtime: 脚本始终静默，不向客户端输出任何日志", () => {
+    const { main, warnings } = loadConcordMain();
+    const out = main({
+        proxies: [
+            { name: "剩余流量：10GB", type: "ss", server: "1.1.1.1", port: 443, cipher: "aes-128-gcm", password: "p", "dialer-proxy": "Gone" },
+            { name: "TS", type: "tailscale", server: "x", port: 1 },
+            { name: "香港 01", type: "ss", server: "1.1.1.1", port: 443, cipher: "aes-128-gcm", password: "p" }
+        ],
+        mode: "bogus",
+        dns: {
+            nameserver: ["ts://bad", "https://1.1.1.1/dns-query"],
+            "default-nameserver": ["not-an-ip", "223.5.5.5"],
+            "ipv6-timeout": "abc"
+        },
+        tun: { enable: true, stack: "bogus", mtu: "abc" }
+    });
+    // 仍有可用节点时，所有清洗过程保持静默
+    assert.equal(warnings.length, 0, "正常可用时不应输出任何日志，实际: " + warnings.join("; "));
+    // 不支持的节点被剔除，信息类节点保留在输出中但不进可选组
+    assert.deepEqual(out.proxies.map(p => p.name), ["剩余流量：10GB", "香港 01"]);
+    assert.equal(out.mode, undefined, "非法值仍应被丢弃");
+});
+
+check("concord-runtime: 无可用节点时只提示一次，其余保持静默", () => {
+    const { main, warnings } = loadConcordMain();
+    const out = main({
+        proxies: [
+            { name: "剩余流量：10GB", type: "ss", server: "1.1.1.1", port: 443, cipher: "aes-128-gcm", password: "p" },
+            { name: "TS", type: "tailscale", server: "x", port: 1 }
+        ]
+    });
+    // 配置仍能加载，但必须让用户知道「用不了」及其原因
+    assert.equal(warnings.length, 1, "无可用节点时应且仅应提示一次，实际: " + warnings.join("; "));
+    assert.ok(warnings[0].includes("没有可用节点"), "提示应说明无可用节点");
+    assert.deepEqual(out["proxy-groups"].find(g => g.name === "静态").proxies, ["REJECT"]);
+
+    const empty = main({ proxies: [] });
+    assert.equal(warnings.length, 2, "空订阅同样应提示");
+    assert.deepEqual(empty["proxy-groups"].find(g => g.name === "静态").proxies, ["REJECT"]);
 });
 console.log(`\nSummary: ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);
