@@ -26,7 +26,6 @@ const SUPPORTED_TYPES = new Set([
     "wireguard", "hysteria", "ssr", "snell", "mieru", "ssh", "shadowquic"
 ]);
 const REJECT_TLS_OPTIONS = ["shadow-tls-opts", "restls-opts", "jls-opts", "tlsmirror-opts"];
-const REJECT_SS_PLUGINS = ["restls", "gost-plugin", "kcptun", "jls"];
 const REJECT_NETWORKS = ["mkcp", "kcp", "mekya"];
 
 // 废弃指纹名：内核会改写并告警（warn.rs），脚本提前改写成现代名以消除告警
@@ -354,6 +353,12 @@ function foldKey(key, underscore) {
 }
 
 function normalizeValue(origKey, value, underscore) {
+    // 数组内的对象同样折叠键名（如 wireguard peers，内核对每个 peer 独立折叠）
+    if (Array.isArray(value)) {
+        return value.map(item =>
+            isPlainObject(item) ? normalizeValue(origKey, item, underscore) : item
+        );
+    }
     if (!isPlainObject(value)) return value;
     // plugin-opts 子树继承「不折叠下划线」；其余子树与父级一致
     const foldUnderscore = underscore && foldKey(origKey, false) !== "plugin-opts";
@@ -418,8 +423,13 @@ function normalizeValues(proxy) {
 function isUnsupportedNode(proxy) {
     if (!SUPPORTED_TYPES.has(proxy.type)) return true;
     if (REJECT_TLS_OPTIONS.some(key => key in proxy)) return true;
-    if (proxy.type === "ss" && typeof proxy.plugin === "string" &&
-        REJECT_SS_PLUGINS.indexOf(proxy.plugin) !== -1) return true;
+    if (proxy.type === "ss" && typeof proxy.plugin === "string") {
+        // T2 插件与未知插件都会被内核隔离并告警（parse.rs:parse_ss），提前剔除
+        if (proxy.plugin !== "" &&
+            ["obfs", "v2ray-plugin", "shadow-tls"].indexOf(proxy.plugin) === -1) {
+            return true;
+        }
+    }
     if (typeof proxy.network === "string" &&
         REJECT_NETWORKS.indexOf(proxy.network) !== -1) return true;
     return false;
@@ -586,7 +596,9 @@ function isValidHysteria2(proxy) {
     if (!nonEmptyText(proxy.server)) return false;
     const portVal = "port" in proxy && parsePortValue(proxy.port) ? Number(proxy.port) : 0;
     const ports = typeof proxy.ports === "string" ? proxy.ports : "";
-    const portsValid = ports !== "" && parsePortsList(ports);
+    // ports 非空时内核必解析，非法即整份拒绝（即使 port 合法）
+    if (ports !== "" && !parsePortsList(ports)) return false;
+    const portsValid = ports !== "";
     // port 与 ports 至少一个（配置期硬错误）
     if (portVal === 0 && !portsValid) return false;
     // obfs（hysteria2/mod.rs:obfs_spec）
@@ -621,7 +633,9 @@ function isValidHysteria(proxy) {
     if (!nonEmptyText(proxy.server)) return false;
     const portVal = "port" in proxy && parsePortValue(proxy.port) ? Number(proxy.port) : 0;
     const ports = typeof proxy.ports === "string" ? proxy.ports : "";
-    const portsValid = ports !== "" && parsePortsList(ports);
+    // ports 非空时内核必解析，非法即整份拒绝（即使 port 合法）
+    if (ports !== "" && !parsePortsList(ports)) return false;
+    const portsValid = ports !== "";
     if (portVal === 0 && !portsValid) return false;
     // up/down 必填且带宽字符串可解析为非零值（hysteria/mod.rs:rates）
     const up = textOf(proxy.up);
@@ -869,13 +883,15 @@ function renameDuplicates(proxies, reserved) {
     });
 }
 
-// dialer-proxy 的目标必须存在，否则内核拒绝整份配置（profile.rs:validate_dialers）
+// dialer-proxy 的目标必须存在，否则内核拒绝整份配置（profile.rs:validate_dialers）。
+// GLOBAL 虽是内建策略，但不在内核的 dialer 解析范围内，同样视为悬空
 function dropDanglingDialer(proxies, groupNames) {
     const known = new Set([
         ...proxies.map(proxy => proxy.name),
         ...groupNames,
         ...BUILTIN_POLICIES
     ]);
+    known.delete("GLOBAL");
     proxies.forEach(proxy => {
         const target = proxy["dialer-proxy"];
         if (typeof target === "string" && target !== "" && !known.has(target)) {

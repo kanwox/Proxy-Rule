@@ -1030,6 +1030,30 @@ check("concord-dirty: 信息节点同样过校验，残缺信息节点不输出"
     assert.ok(!out["proxy-groups"].find(g => g.name === "静态").proxies.includes("剩余流量：10GB"), "信息节点不进可选组");
 });
 
+check("concord-dirty: wireguard peers 键名折叠、ports 解析、ss 未知插件、dialer→GLOBAL", () => {
+    const { main } = loadConcordMain();
+    const key = "A".repeat(43) + "=";
+    // peers 内下划线变体键应折叠后保留（内核对每个 peer 独立折叠）
+    const f1 = main({ proxies: [CONCORD_OK, { name: "W1", type: "wireguard", "private-key": key, ip: "10.0.0.2", peers: [{ server: "a", port: 1, "public-key": key, allowed_ips: ["0.0.0.0/0"] }] }] });
+    assert.ok(concordHas(f1, "W1"), "peers 下划线变体应折叠后保留");
+    // ports 非空时内核必解析，非法即整份拒绝（即使 port 合法）
+    const f2 = main({ proxies: [CONCORD_OK, { name: "H1", type: "hysteria2", server: "x", port: 443, password: "p", ports: "abc" }] });
+    assert.ok(!concordHas(f2, "H1"), "hy2 ports 非法应剔除");
+    const f2b = main({ proxies: [CONCORD_OK, { name: "H2", type: "hysteria", server: "x", port: 443, up: "10", down: "20", ports: "abc" }] });
+    assert.ok(!concordHas(f2b, "H2"), "hy1 ports 非法应剔除");
+    const f2c = main({ proxies: [CONCORD_OK, { name: "H3", type: "hysteria2", server: "x", password: "p", ports: "1000-2000,3000" }] });
+    assert.ok(concordHas(f2c, "H3"), "hy2 ports 合法应保留");
+    // ss 未知插件会被内核隔离告警，应剔除；合法插件与空插件保留
+    const f3 = main({ proxies: [CONCORD_OK, { ...CONCORD_OK, name: "S1", plugin: "simple-obfs" }, { ...CONCORD_OK, name: "S2", plugin: "obfs", "plugin-opts": { mode: "http" } }, { ...CONCORD_OK, name: "S3", plugin: "" }] });
+    assert.ok(!concordHas(f3, "S1"), "ss 未知插件应剔除");
+    assert.ok(concordHas(f3, "S2"), "ss 合法插件应保留");
+    assert.ok(concordHas(f3, "S3"), "ss 空插件应保留");
+    // dialer-proxy 指向 GLOBAL 内核会硬拒绝，应清理；指向 DIRECT 合法保留
+    const f4 = main({ proxies: [CONCORD_OK, { ...CONCORD_OK, name: "D1", server: "1.1.1.2", "dialer-proxy": "GLOBAL" }, { ...CONCORD_OK, name: "D2", server: "1.1.1.3", "dialer-proxy": "DIRECT" }] });
+    assert.equal(f4.proxies.find(p => p.name === "D1")["dialer-proxy"], undefined, "dialer→GLOBAL 应清理");
+    assert.equal(f4.proxies.find(p => p.name === "D2")["dialer-proxy"], "DIRECT", "dialer→DIRECT 应保留");
+});
+
 check("concord-dirty: 规范订阅仍零告警零剔除，输出结构完整", () => {
     const { main, warnings } = loadConcordMain();
     const out = main({
