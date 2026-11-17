@@ -493,33 +493,13 @@ check("clash-runtime: 23 个地区扩展城市与印度尼西亚防误匹配", (
 });
 
 
-// 6. Concord_rule.js 运行时回归测试
+// 6. Concord_rule.js（继承式）契约测试
+// 只测脚本对用户的承诺，不测实现路径；换实现时这些测试应保持不变。
+// 承诺：①不兼容告警源被静默清除（客户端感叹号消失）②尊重订阅/客户端设置
+//       ③引用完整不触发整份拒绝 ④分流结构与 Clash 版一致
 const concordJs = readUtf8("Concord/Concord_rule.js");
 
-// Concord 内核字段白名单（镜像 crates/config/src/keys.rs），脚本输出不得越界
-const CONCORD_TOP_ALLOWED = new Set([
-    "mixed-port", "port", "socks-port", "allow-lan", "authentication",
-    "skip-auth-prefixes", "mode", "log-level", "ipv6", "unified-delay",
-    "tcp-concurrent", "find-process-mode", "interface-name", "routing-mark",
-    "keep-alive-idle", "keep-alive-interval", "disable-keep-alive", "global-ua",
-    "proxies", "proxy-groups", "proxy-providers", "rule-providers", "sub-rules",
-    "rules", "dns", "tun", "sniffer", "hosts", "geox-url", "geo-auto-update",
-    "geo-update-interval", "geodata-loader", "profile", "redir-port",
-    "tproxy-port", "ntp", "experimental", "tls", "mitm"
-]);
-
-const CONCORD_DNS_ALLOWED = new Set([
-    "enable", "enhanced-mode", "nameserver", "default-nameserver",
-    "nameserver-policy", "proxy-server-nameserver", "direct-nameserver",
-    "direct-nameserver-follow-policy", "use-hosts", "use-system-hosts",
-    "respect-rules", "fake-ip-range", "fake-ip-filter", "fake-ip-filter-mode",
-    "fake-ip-ttl", "ipv6", "fallback", "fallback-lazy-query", "fallback-filter",
-    "ipv6-timeout", "prefer-h3", "cache-algorithm", "cache-max-size",
-    "fake-ip-range6", "proxy-server-nameserver-policy", "listen",
-    "listen-routing-mark"
-]);
-
-function loadConcordMain() {
+function loadConcord(source = concordJs) {
     const warnings = [];
     const sandbox = {
         console: {
@@ -528,549 +508,195 @@ function loadConcordMain() {
         }
     };
     vm.createContext(sandbox);
-    vm.runInContext(concordJs, sandbox);
+    vm.runInContext(source, sandbox);
     return {
         main: input => JSON.parse(JSON.stringify(sandbox.main(input))),
         warnings
     };
 }
 
-check("concord-runtime: 输出只含 Concord 读取的字段，且不含 T2/未知键", () => {
-    const { main } = loadConcordMain();
+const C_OK = { name: "OK", type: "ss", server: "1.1.1.1", port: 443, cipher: "aes-128-gcm", password: "p" };
+
+check("concord-contract: 不兼容告警源被静默清除（顶层/分段/节点）", () => {
+    const { main, warnings } = loadConcord();
     const out = main({
         proxies: [
-            { name: "香港 01", type: "ss", server: "1.1.1.1", port: 443, cipher: "aes-128-gcm", password: "p" },
-            { name: "Tokyo 01", type: "trojan", server: "t.1.1.1", port: 443, password: "p" }
+            C_OK,
+            { name: "TS", type: "tailscale", server: "x", port: 1 },
+            { name: "KP", type: "vmess", server: "x", port: 1, uuid: "u", cipher: "auto", network: "kcp" },
+            { name: "ST", type: "vless", server: "x", port: 1, uuid: "u", "restls-opts": { password: "p" } },
+            { name: "PL", type: "ss", server: "x", port: 1, cipher: "aes-128-gcm", password: "p", plugin: "kcptun" },
+            { name: "FP", type: "trojan", server: "x", port: 443, password: "p", "client-fingerprint": "chrome_psk" }
         ],
-        ipv6: false,
-        "external-controller": "127.0.0.1:9090",
-        secret: "x",
-        "external-ui": "ui",
         "geodata-mode": true,
         "global-client-fingerprint": "chrome",
-        "bind-address": "*",
-        listeners: [],
+        listeners: [{ name: "l", type: "mixed", port: 1 }],
+        "external-ui": "ui",
+        "external-controller": "127.0.0.1:9090",
+        secret: "x",
+        "unknown-key": 1,
+        tun: { enable: true, stack: "mixed", gso: true, "dns-mode": "hijack", mtu: 9000 },
         experimental: { "quic-go-disable-ecn": false },
         tls: { certificate: "a" },
-        mitm: { enable: true },
-        "sub-rules": { a: ["MATCH,DIRECT"] }
-    });
-    for (const key of Object.keys(out)) {
-        assert.ok(CONCORD_TOP_ALLOWED.has(key), "Concord 输出含内核不读取的顶层键: " + key);
-    }
-    for (const key of Object.keys(out.dns)) {
-        assert.ok(CONCORD_DNS_ALLOWED.has(key), "Concord dns 含内核不读取的键: " + key);
-    }
-});
-
-check("concord-runtime: 剔除不支持的节点类型、传输与插件", () => {
-    const { main, warnings } = loadConcordMain();
-    const out = main({
-        proxies: [
-            { name: "香港 01", type: "ss", server: "1.1.1.1", port: 443, cipher: "aes-128-gcm", password: "p" },
-            { name: "TS", type: "tailscale", server: "x", port: 1 },
-            { name: "OVPN", type: "openvpn", server: "x", port: 1 },
-            { name: "KCP", type: "vmess", server: "x", port: 1, uuid: "b831381d-6324-4d53-ad4f-8cda48b30811", cipher: "auto", network: "kcp" },
-            { name: "Restls", type: "ss", server: "x", port: 1, cipher: "aes-128-gcm", password: "p", plugin: "restls" },
-            { name: "TLSMirror", type: "vless", server: "x", port: 1, uuid: "b831381d-6324-4d53-ad4f-8cda48b30811", "tlsmirror-opts": {} }
-        ]
-    });
-    const names = out.proxies.map(p => p.name);
-    assert.deepEqual(names, ["香港 01"], "不支持的节点应全部剔除，实际: " + names.join(","));
-    assert.equal(warnings.length, 0, "默认应完全静默，实际输出: " + warnings.join("; "));
-});
-
-check("concord-runtime: 改写废弃指纹并补全 ip-version", () => {
-    const { main } = loadConcordMain();
-    const out = main({
-        proxies: [
-            { name: "A", type: "vless", server: "1.1.1.1", port: 443, uuid: "b831381d-6324-4d53-ad4f-8cda48b30811", "client-fingerprint": "chrome_psk" },
-            { name: "B", type: "vless", server: "1.1.1.2", port: 443, uuid: "b831381d-6324-4d53-ad4f-8cda48b30811", "client-fingerprint": "randomized" },
-            { name: "C", type: "ss", server: "1.1.1.3", port: 443, cipher: "aes-128-gcm", password: "p" }
-        ]
-    });
-    const byName = new Map(out.proxies.map(p => [p.name, p]));
-    assert.equal(byName.get("A")["client-fingerprint"], "chrome");
-    assert.equal(byName.get("B")["client-fingerprint"], "random");
-    for (const name of ["A", "B", "C"]) {
-        assert.equal(byName.get(name)["ip-version"], "dual", name + " 应补全 ip-version");
-    }
-});
-
-check("concord-runtime: DNS 全部由脚本生成，不继承订阅的同名段", () => {
-    const { main } = loadConcordMain();
-    const out = main({
-        proxies: [{ name: "HK 01", type: "ss", server: "1.1.1.1", port: 443, cipher: "aes-128-gcm", password: "p" }],
         dns: {
-            listen: "0.0.0.0:53",
-            nameserver: ["ts://bad"],
-            "default-nameserver": ["2400:3200::1"],
-            "fake-ip-filter": ["geosite:cn"]
+            nameserver: ["dhcp://en0", "ts://bad", "https://223.5.5.5/dns-query"]
         }
     });
-    assert.equal(out.dns.listen, undefined, "dns.listen 不应输出");
-    for (const server of out.dns["default-nameserver"]) {
-        assert.match(server, /^(\d{1,3}\.){3}\d{1,3}$/, "引导 DNS 必须是纯 IP: " + server);
+    // 不支持节点被剔除（内核会隔离并告警）
+    const names = out.proxies.map(p => p.name);
+    assert.deepEqual(names.filter(n => ["TS", "KP", "ST", "PL"].includes(n)), [], "不支持节点应剔除");
+    // 废弃指纹被改写（内核会告警）
+    assert.equal(out.proxies.find(p => p.name === "FP")["client-fingerprint"], "chrome");
+    // 顶层 T2 死键消失；客户端自管设置与未知键按新脚本设计保留透传
+    for (const key of ["geodata-mode", "global-client-fingerprint", "listeners", "external-ui"]) {
+        assert.equal(out[key], undefined, key + " 应被剔除");
     }
-    assert.ok(!out.dns.nameserver.some(ns => ns.startsWith("ts://")), "订阅的非法上游不应进入输出");
-    assert.deepEqual(out.dns["nameserver-policy"]["rule-set:ads-domain"], ["rcode://name_error"]);
-    assert.equal(out.dns["enhanced-mode"], "fake-ip", "分流依赖 fake-ip 还原域名");
+    assert.equal(out["external-controller"], "127.0.0.1:9090", "客户端自管设置应透传");
+    assert.equal(out.secret, "x", "客户端自管设置应透传");
+    assert.equal(out["unknown-key"], 1, "黑名单外的未知键应保留");
+    // tun 死键消失，生效设置继承（stack 是生效设置，mixed 保留）
+    assert.equal(out.tun.gso, undefined);
+    assert.equal(out.tun["dns-mode"], undefined);
+    assert.equal(out.tun.stack, "mixed", "生效的 tun.stack 应透传");
+    assert.equal(out.tun.mtu, 9000, "合法 tun 设置应继承");
+    assert.equal(out.tun.enable, true);
+    // experimental/tls 告警键消失
+    assert.equal(out.experimental["quic-go-disable-ecn"], undefined);
+    assert.equal(out.tls.certificate, undefined);
+    // DNS：dhcp 改写、ts 丢弃（订阅无 fallback 时上游继承并完成协议清洗）
+    assert.ok(out.dns.nameserver.includes("system://"), "dhcp:// 应改写为 system://");
+    assert.ok(!out.dns.nameserver.some(s => s.startsWith("ts://")), "ts:// 应丢弃");
+    assert.ok(out.dns.nameserver.includes("https://223.5.5.5/dns-query"), "合法订阅上游应继承");
+    // 清除过程静默
+    assert.equal(warnings.length, 0, "清洗不应产生日志: " + warnings.join("; "));
 });
 
-check("concord-runtime: tun 只继承开关，hosts 过滤内核不接受的条目", () => {
-    const { main } = loadConcordMain();
+check("concord-contract: 尊重订阅与客户端设置（继承而非覆盖）", () => {
+    const { main } = loadConcord();
     const out = main({
-        proxies: [{ name: "HK 01", type: "ss", server: "1.1.1.1", port: 443, cipher: "aes-128-gcm", password: "p" }],
-        tun: { enable: true, stack: "mixed", gso: true, "dns-mode": "hijack", mtu: 9000 },
-        hosts: { "router.lan": "192.168.1.1", "bad.lan": "lan", "bad entry": "1.2.3.4" }
+        proxies: [C_OK],
+        mode: "global",
+        "log-level": "debug",
+        "mixed-port": 7890,
+        ipv6: true,
+        "interface-name": "eth0",
+        ntp: { enable: true, server: "time.apple.com" },
+        "geox-url": { mmdb: "https://example.com/geo.mmdb" },
+        tun: { enable: true, stack: "gvisor", mtu: 1500, "auto-route": false },
+        dns: {
+            listen: "127.0.0.1:1053",
+            nameserver: ["https://dns.example/dns-query"]
+        },
+        profile: { "store-selected": false }
     });
-    // 栈与 MTU 由客户端按平台决定，脚本只传递开关
-    assert.deepEqual(out.tun, { enable: true });
-    assert.deepEqual(out.hosts, { "router.lan": "192.168.1.1" });
-
-    const noTun = main({
-        proxies: [{ name: "HK 01", type: "ss", server: "1.1.1.1", port: 443, cipher: "aes-128-gcm", password: "p" }]
-    });
-    assert.equal(noTun.tun, undefined, "订阅未声明 tun 时不输出该段");
+    assert.equal(out.mode, "global", "mode 应继承");
+    assert.equal(out["log-level"], "debug");
+    assert.equal(out["mixed-port"], 7890);
+    assert.equal(out["interface-name"], "eth0");
+    assert.equal(out.ntp.enable, true, "ntp 段应继承");
+    assert.equal(out.ntp.server, "time.apple.com");
+    assert.equal(out["geox-url"].mmdb, "https://example.com/geo.mmdb", "geox-url 应继承");
+    assert.equal(out.tun.stack, "gvisor", "合法栈应继承");
+    assert.equal(out.tun.mtu, 1500);
+    assert.equal(out.tun["auto-route"], false);
+    assert.equal(out.dns.listen, "127.0.0.1:1053", "dns.listen 应继承");
+    assert.ok(out.dns.nameserver.includes("https://dns.example/dns-query"), "订阅 DNS 应继承");
+    assert.equal(out.profile["store-selected"], false, "订阅 profile 应优先");
 });
 
-check("concord-runtime: 清理悬空 dialer-proxy 与空组兜底", () => {
-    const { main, warnings } = loadConcordMain();
+check("concord-contract: 引用完整——规则/规则集/dialer/hosts 不触发整份拒绝", () => {
+    const { main } = loadConcord();
     const out = main({
         proxies: [
-            { name: "A", type: "ss", server: "1.1.1.1", port: 443, cipher: "aes-128-gcm", password: "p", "dialer-proxy": "Gone" },
-            { name: "B", type: "ss", server: "1.1.1.2", port: 443, cipher: "aes-128-gcm", password: "p" }
-        ]
+            C_OK,
+            { ...C_OK, name: "A", server: "1.1.1.2", "dialer-proxy": "B" },
+            { ...C_OK, name: "B", server: "1.1.1.3", "dialer-proxy": "A" },
+            { ...C_OK, name: "D", server: "1.1.1.4", "dialer-proxy": "Gone" }
+        ],
+        hosts: {
+            "ok.lan": "192.168.1.1",
+            "self.lan": "lan",
+            "obj.lan": { a: 1 },
+            "cyc-a.lan": "cyc-b.lan",
+            "cyc-b.lan": "cyc-a.lan"
+        }
     });
-    assert.equal(out.proxies.find(p => p.name === "A")["dialer-proxy"], undefined);
-    assert.equal(warnings.length, 0, "默认应完全静默");
-
-    const empty = main({ proxies: [] });
-    const staticGroup = empty["proxy-groups"].find(g => g.name === "静态");
-    assert.deepEqual(staticGroup.proxies, ["REJECT"]);
-    for (const g of empty["proxy-groups"]) {
-        assert.ok(Array.isArray(g.proxies) && g.proxies.length > 0, "组 " + g.name + " 不应为空");
-    }
-});
-
-check("concord-runtime: 规则与规则集引用完整，MATCH 唯一且最后", () => {
-    const { main } = loadConcordMain();
-    const out = main({
-        proxies: [{ name: "HK 01", type: "ss", server: "1.1.1.1", port: 443, cipher: "aes-128-gcm", password: "p" }]
-    });
+    // dialer：成环断开、悬空删除，节点保留
+    assert.equal(out.proxies.find(p => p.name === "A")["dialer-proxy"], undefined, "环应断开");
+    assert.equal(out.proxies.find(p => p.name === "B")["dialer-proxy"], undefined);
+    assert.equal(out.proxies.find(p => p.name === "D")["dialer-proxy"], undefined, "悬空应删除");
+    assert.ok(out.proxies.some(p => p.name === "A"), "环上节点应保留");
+    // hosts：非法条目剔除，合法保留（lan 是内核支持的特殊值，应保留）
+    assert.equal(out.hosts["ok.lan"], "192.168.1.1");
+    assert.equal(out.hosts["self.lan"], "lan", "lan 特殊值内核支持，应保留");
+    assert.equal(out.hosts["obj.lan"], undefined);
+    assert.equal(out.hosts["cyc-a.lan"], undefined);
+    assert.equal(out.hosts["cyc-b.lan"], undefined);
+    // 规则引用完整
     const providers = new Set(Object.keys(out["rule-providers"]));
     const groups = new Set(out["proxy-groups"].map(g => g.name));
     const builtin = new Set(["DIRECT", "REJECT", "REJECT-DROP", "PASS", "PASS-RULE", "COMPATIBLE", "GLOBAL"]);
     const matches = out.rules.filter(r => r.startsWith("MATCH,"));
-    assert.equal(matches.length, 1, "MATCH 必须唯一");
-    assert.equal(out.rules[out.rules.length - 1], matches[0], "MATCH 必须是最后一条规则");
+    assert.equal(matches.length, 1, "MATCH 唯一");
+    assert.equal(out.rules[out.rules.length - 1], matches[0], "MATCH 最后");
     for (const rule of out.rules) {
         const parts = rule.split(",");
         const set = parts.find((p, i) => parts[i - 1] === "RULE-SET");
-        if (set) assert.ok(providers.has(set), "规则引用了不存在的规则集: " + set);
+        if (set) assert.ok(providers.has(set), "规则集缺失: " + set);
         if (rule.startsWith("MATCH,")) continue;
-        // 目标之后可能跟 no-resolve / src 等参数
         const params = new Set(["no-resolve", "src"]);
         const tail = parts.filter(part => !params.has(part));
         const target = tail[tail.length - 1];
-        assert.ok(groups.has(target) || builtin.has(target), "规则目标不存在: " + target);
+        assert.ok(groups.has(target) || builtin.has(target), "规则目标缺失: " + target);
     }
-});
-
-check("concord-runtime: 被过滤节点上的悬空 dialer-proxy 也会被清理", () => {
-    const { main } = loadConcordMain();
-    const out = main({
-        proxies: [
-            { name: "剩余流量：10GB", type: "ss", server: "1.1.1.1", port: 443, cipher: "aes-128-gcm", password: "p", "dialer-proxy": "Gone" },
-            { name: "HK 01", type: "ss", server: "1.1.1.2", port: 443, cipher: "aes-128-gcm", password: "p" }
-        ]
-    });
-    for (const proxy of out.proxies) {
-        assert.equal(proxy["dialer-proxy"], undefined, proxy.name + " 的 dialer-proxy 应被清理");
-    }
-});
-
-check("concord-runtime: IPv6 默认开启，订阅显式 false 才关闭", () => {
-    const { main } = loadConcordMain();
-    const on = main({ proxies: [{ name: "HK 01", type: "ss", server: "1.1.1.1", port: 443, cipher: "aes-128-gcm", password: "p" }] });
-    assert.equal(on.ipv6, true, "IPv6 应默认开启");
-    assert.equal(on.dns.ipv6, true);
-    assert.ok(on.dns["fake-ip-range6"], "IPv6 开启时应输出 fake-ip-range6");
-    const off = main({ proxies: [{ name: "HK 01", type: "ss", server: "1.1.1.1", port: 443, cipher: "aes-128-gcm", password: "p" }], ipv6: false });
-    assert.equal(off.ipv6, false);
-    assert.equal(off.dns.ipv6, false);
-    assert.equal(off.dns["fake-ip-range6"], undefined);
-});
-
-check("concord-runtime: 生成配置只含内核读取的字段，订阅的非分流段不输出", () => {
-    const { main } = loadConcordMain();
-    const out = main({
-        proxies: [{ name: "HK 01", type: "ss", server: "1.1.1.1", port: 443, cipher: "aes-128-gcm", password: "p" }],
-        mode: "bogus",
-        "log-level": "bogus",
-        experimental: { fingerprints: { a: "b" }, "quic-go-disable-gso": true },
-        tls: { "custom-certifactes": ["c"], certificate: "cert" },
-        ntp: { port: "abc", server: "time.apple.com" },
-        "geox-url": { mmdb: 123 }
-    });
-    // 这些段与分流无关，交给客户端默认，不继承订阅值
-    assert.equal(out.mode, undefined);
-    assert.equal(out["log-level"], undefined);
-    assert.equal(out.experimental, undefined);
-    assert.equal(out.tls, undefined);
-    assert.equal(out.ntp, undefined);
-    assert.equal(out["geox-url"], undefined);
-});
-
-check("concord-runtime: 订阅 DNS 段不继承，输出为脚本生成", () => {
-    const { main } = loadConcordMain();
-    const out = main({
-        proxies: [{ name: "HK 01", type: "ss", server: "1.1.1.1", port: 443, cipher: "aes-128-gcm", password: "p" }],
-        dns: {
-            "default-nameserver": ["1.2.3.4", "dns.google", "2400:3200::1"],
-            nameserver: ["2400:3200::1", "ts://bad"],
-            fallback: ["https://8.8.4.4/dns-query"]
+    // fake-ip-filter 的 rule-set 引用存在
+    for (const item of out.dns["fake-ip-filter"]) {
+        if (item.startsWith("rule-set:")) {
+            assert.ok(providers.has(item.slice(9)), "fake-ip-filter 引用缺失: " + item);
         }
-    });
-    assert.deepEqual(out.dns["default-nameserver"], ["223.5.5.5", "119.29.29.29"], "引导 DNS 由脚本固定");
-    assert.equal(out.dns.fallback, undefined, "订阅 fallback 不继承");
-    assert.ok(!out.dns.nameserver.some(ns => ns.startsWith("ts://")));
-    assert.ok(!out.dns.nameserver.some(ns => ns.includes("2400:3200::1")));
+    }
 });
 
-check("concord-runtime: 脚本始终静默，不向客户端输出任何日志", () => {
-    const { main, warnings } = loadConcordMain();
-    const out = main({
+check("concord-contract: 分流结构与 Clash 版一致（组/规则/地区）", () => {
+    const { main } = loadConcord();
+    const { main: clashMain } = loadClashMain();
+    const input = {
         proxies: [
-            { name: "剩余流量：10GB", type: "ss", server: "1.1.1.1", port: 443, cipher: "aes-128-gcm", password: "p", "dialer-proxy": "Gone" },
-            { name: "TS", type: "tailscale", server: "x", port: 1 },
-            { name: "香港 01", type: "ss", server: "1.1.1.1", port: 443, cipher: "aes-128-gcm", password: "p" }
-        ],
-        mode: "bogus",
-        dns: {
-            nameserver: ["ts://bad", "https://1.1.1.1/dns-query"],
-            "default-nameserver": ["not-an-ip", "223.5.5.5"],
-            "ipv6-timeout": "abc"
-        },
-        tun: { enable: true, stack: "bogus", mtu: "abc" }
-    });
-    // 仍有可用节点时，所有清洗过程保持静默
-    assert.equal(warnings.length, 0, "正常可用时不应输出任何日志，实际: " + warnings.join("; "));
-    // 不支持的节点被剔除，信息类节点保留在输出中但不进可选组
-    assert.deepEqual(out.proxies.map(p => p.name), ["剩余流量：10GB", "香港 01"]);
-    assert.equal(out.mode, undefined, "非法值仍应被丢弃");
+            { name: "HK 01", type: "ss", server: "1.1.1.1", port: 443, cipher: "aes-128-gcm", password: "p" },
+            { name: "HK 02", type: "ss", server: "1.1.1.2", port: 443, cipher: "aes-128-gcm", password: "p" },
+            { name: "Tokyo 01", type: "ss", server: "1.1.1.3", port: 443, cipher: "aes-128-gcm", password: "p" },
+            { name: "Osaka 02", type: "ss", server: "1.1.1.4", port: 443, cipher: "aes-128-gcm", password: "p" },
+            { name: "剩余流量：10GB", type: "ss", server: "1.1.1.9", port: 443, cipher: "aes-128-gcm", password: "p" }
+        ]
+    };
+    const concordOut = main(JSON.parse(JSON.stringify(input)));
+    const clashOut = clashMain(JSON.parse(JSON.stringify(input)));
+    // 组名与规则序列与 Clash 版一致（同一份分流设计）
+    assert.deepEqual(
+        concordOut["proxy-groups"].map(g => g.name),
+        clashOut["proxy-groups"].map(g => g.name),
+        "策略组结构应与 Clash 版一致"
+    );
+    assert.deepEqual(concordOut.rules, clashOut.rules, "规则序列应与 Clash 版一致");
+    // 信息节点被排除出可选组
+    const staticGroup = concordOut["proxy-groups"].find(g => g.name === "静态");
+    assert.ok(!staticGroup.proxies.includes("剩余流量：10GB"), "信息节点不进可选组");
+    // 地区组建立
+    const hk = concordOut["proxy-groups"].find(g => g.name === "HK");
+    assert.deepEqual(hk.proxies, ["HK 01", "HK 02"]);
 });
 
-check("concord-runtime: 无可用节点时只提示一次，其余保持静默", () => {
-    const { main, warnings } = loadConcordMain();
+check("concord-contract: 无可用节点时提示一次", () => {
+    const { main, warnings } = loadConcord();
     const out = main({
         proxies: [
             { name: "剩余流量：10GB", type: "ss", server: "1.1.1.1", port: 443, cipher: "aes-128-gcm", password: "p" },
             { name: "TS", type: "tailscale", server: "x", port: 1 }
         ]
     });
-    // 配置仍能加载，但必须让用户知道「用不了」及其原因
-    assert.equal(warnings.length, 1, "无可用节点时应且仅应提示一次，实际: " + warnings.join("; "));
-    assert.ok(warnings[0].includes("没有可用节点"), "提示应说明无可用节点");
+    assert.equal(warnings.length, 1, "无可用节点应提示一次: " + warnings.join("; "));
+    assert.ok(warnings[0].includes("REJECT"), "提示应说明 REJECT 占位");
     assert.deepEqual(out["proxy-groups"].find(g => g.name === "静态").proxies, ["REJECT"]);
-
-    const empty = main({ proxies: [] });
-    assert.equal(warnings.length, 2, "空订阅同样应提示");
-    assert.deepEqual(empty["proxy-groups"].find(g => g.name === "静态").proxies, ["REJECT"]);
-});
-
-// 7. Concord_rule.js 脏数据清洗回归（镜像内核配置解析期 + 构建期校验）
-// 内核行为依据：crates/config/src/proxy/parse.rs（解析期硬错误/隔离）、
-// crates/proxy/src/*（构建期 Invalid=整份拒绝 / Unsupported=静默隔离）、
-// crates/config/src/hosts.rs、profile.rs（dialer 环/重名）
-
-const CONCORD_OK = { name: "OK", type: "ss", server: "1.1.1.1", port: 443, cipher: "aes-128-gcm", password: "p" };
-const concordNames = out => out.proxies.map(p => p.name);
-const concordHas = (out, name) => concordNames(out).includes(name);
-
-check("concord-dirty: 解析期硬错误节点全部剔除，不触发整份拒绝", () => {
-    const { main, warnings } = loadConcordMain();
-    const bad = [
-        { name: "D1", type: "ss", server: "x", port: 1 },
-        { name: "D2", type: "ss", server: "x", port: "abc", cipher: "c", password: "p" },
-        { name: "D3", type: "vmess", server: "x", port: 1, cipher: "auto" },
-        { name: "D4", type: "vless", server: "x", port: 1 },
-        { name: "D5", type: "trojan", server: "x", port: 1 },
-        { name: "D6", type: "hysteria", server: "x", port: 1 },
-        { name: "D7", type: "hysteria2", server: "x" },
-        { name: "D8", type: "snell", server: "x", port: 1 },
-        { name: "D9", type: "mieru", server: "x", port: 1, username: "u", password: "p" },
-        { name: "D10", type: "ssh", server: "x", port: 1 },
-        { name: "D11", type: "ssr", server: "x", port: 1, password: "p", cipher: "c", protocol: "origin" },
-        { name: "D12", type: "wireguard", server: "x", port: 1 },
-        { name: "D13", type: "anytls", server: "x", port: 1 },
-        { name: "D14", type: "tuic", server: "x", port: 1 },
-        { name: "D15", type: "ss", server: "x", port: 1, cipher: "c", password: "p", plugin: "obfs", "plugin-opts": { mode: "bogus" } },
-        { name: "D16", type: "vless", server: "x", port: 1, uuid: "u", tls: true, "reality-opts": { "public-key": "short" } },
-        { name: "D17", type: "ss", server: "x", port: 1, cipher: "c", password: "p", smux: { enabled: true, protocol: "bogus" } },
-        { name: "D18", type: "wireguard", "private-key": "A".repeat(43) + "=", ip: "10.0.0.2", peers: [{ server: "a", port: 1, "public-key": "p" }] },
-        { name: "D19", type: "mieru", server: "x", port: 1, "port-range": "1-2", transport: "TCP", username: "u", password: "p" }
-    ];
-    const out = main({ proxies: [CONCORD_OK, ...bad] });
-    assert.deepEqual(concordNames(out), ["OK"], "解析期硬错误节点应全部剔除，实际保留: " + concordNames(out).join(","));
-    assert.equal(warnings.length, 0, "剔除过程应保持静默");
-});
-
-check("concord-dirty: dialer-proxy 成环断环保节点，自环同样处理", () => {
-    const { main } = loadConcordMain();
-    const two = main({
-        proxies: [
-            CONCORD_OK,
-            { ...CONCORD_OK, name: "A", server: "1.1.1.2", "dialer-proxy": "B" },
-            { ...CONCORD_OK, name: "B", server: "1.1.1.3", "dialer-proxy": "A" }
-        ]
-    });
-    assert.ok(concordHas(two, "A") && concordHas(two, "B"), "环上节点应保留");
-    assert.equal(two.proxies.filter(p => p["dialer-proxy"]).length, 0, "环上 dialer-proxy 应全部断开");
-
-    const three = main({
-        proxies: [
-            CONCORD_OK,
-            { ...CONCORD_OK, name: "A", server: "1.1.1.2", "dialer-proxy": "B" },
-            { ...CONCORD_OK, name: "B", server: "1.1.1.3", "dialer-proxy": "C" },
-            { ...CONCORD_OK, name: "C", server: "1.1.1.4", "dialer-proxy": "A" }
-        ]
-    });
-    assert.equal(three.proxies.filter(p => p["dialer-proxy"]).length, 0, "三节点环应全部断开");
-
-    // 链式引用（无环）不受影响
-    const chain = main({
-        proxies: [
-            CONCORD_OK,
-            { ...CONCORD_OK, name: "A", server: "1.1.1.2", "dialer-proxy": "OK" },
-            { ...CONCORD_OK, name: "B", server: "1.1.1.3", "dialer-proxy": "A" }
-        ]
-    });
-    assert.equal(chain.proxies.find(p => p.name === "A")["dialer-proxy"], "OK");
-    assert.equal(chain.proxies.find(p => p.name === "B")["dialer-proxy"], "A");
-
-    const self = main({
-        proxies: [CONCORD_OK, { ...CONCORD_OK, name: "S", server: "1.1.1.2", "dialer-proxy": "S" }]
-    });
-    assert.ok(concordHas(self, "S"));
-    assert.equal(self.proxies.find(p => p.name === "S")["dialer-proxy"], undefined, "自环应断开");
-});
-
-check("concord-dirty: 键名与值规范化（大小写/下划线变体）", () => {
-    const { main } = loadConcordMain();
-    const out = main({
-        proxies: [
-            CONCORD_OK,
-            // type 大写：规范化为小写后保留
-            { ...CONCORD_OK, name: "UP", type: "SS" },
-            // 下划线 T2 键：折叠后命中剔除清单
-            { name: "UL", type: "vless", server: "x", port: 1, uuid: "u", shadow_tls_opts: { host: "h" } },
-            // plugin 大写：规范化后命中剔除清单
-            { ...CONCORD_OK, name: "PL", plugin: "Restls" },
-            // ws_opts 折叠为 ws-opts 保留
-            { name: "WS", type: "vmess", server: "x", port: 1, uuid: "u", cipher: "auto", network: "ws", ws_opts: { path: "/x" } },
-            // network 大写 KCP：规范化后命中剔除清单
-            { name: "KP", type: "vmess", server: "x", port: 1, uuid: "u", cipher: "auto", network: "KCP" }
-        ]
-    });
-    assert.ok(concordHas(out, "UP"), "大写 type 应规范化保留");
-    assert.equal(out.proxies.find(p => p.name === "UP").type, "ss");
-    assert.ok(!concordHas(out, "UL"), "下划线 T2 键节点应剔除");
-    assert.ok(!concordHas(out, "PL"), "大写 plugin 节点应剔除");
-    assert.ok(!concordHas(out, "KP"), "大写 network 节点应剔除");
-    const ws = out.proxies.find(p => p.name === "WS");
-    assert.ok(ws && ws["ws-opts"] && ws["ws-opts"].path === "/x", "ws_opts 应折叠为 ws-opts 保留");
-});
-
-check("concord-dirty: 废弃指纹大小写不敏感改写，且只改 client-fingerprint", () => {
-    const { main } = loadConcordMain();
-    const out = main({
-        proxies: [
-            { name: "F1", type: "vless", server: "x", port: 1, uuid: "u", "client-fingerprint": "Chrome_Psk" },
-            { name: "F2", type: "vless", server: "x", port: 1, uuid: "u", "client-fingerprint": "RANDOMIZED" },
-            { name: "F3", type: "vless", server: "x", port: 1, uuid: "u", "client-fingerprint": "chrome" }
-        ]
-    });
-    const byName = new Map(out.proxies.map(p => [p.name, p]));
-    assert.equal(byName.get("F1")["client-fingerprint"], "chrome");
-    assert.equal(byName.get("F2")["client-fingerprint"], "random");
-    assert.equal(byName.get("F3")["client-fingerprint"], "chrome", "现代名不应被改动");
-});
-
-check("concord-dirty: 构建期校验剔除（cipher/flow/版本/带宽等）", () => {
-    const { main, warnings } = loadConcordMain();
-    const bad = [
-        // ss 未知 cipher → 构建期隔离
-        { ...CONCORD_OK, name: "K1", cipher: "aes-192-gcm" },
-        // ss 2022 密码长度不符 → 构建期硬错误
-        { ...CONCORD_OK, name: "K2", cipher: "2022-blake3-aes-128-gcm", password: "AAAA" },
-        // ss 2022 EIH 仅 AES：chacha20 冒号密码 → 硬错误
-        { ...CONCORD_OK, name: "K3", cipher: "2022-blake3-chacha20-poly1305", password: "A".repeat(43) + ":" + "B".repeat(43) },
-        // vless flow 前 16 字节非法 → 硬错误
-        { name: "K4", type: "vless", server: "x", port: 1, uuid: "u", flow: "xtls-rprx-bogus!" },
-        // vless encryption 非空非 none → 隔离
-        { name: "K5", type: "vless", server: "x", port: 1, uuid: "u", encryption: "aes" },
-        // vmess cipher 未知 → 硬错误
-        { name: "K6", type: "vmess", server: "x", port: 1, uuid: "u", cipher: "bogus" },
-        // ssr chacha20 → 隔离；AEAD → 硬错误；未知 obfs → 硬错误
-        { name: "K7", type: "ssr", server: "x", port: 1, password: "p", cipher: "chacha20", obfs: "plain", protocol: "origin" },
-        { name: "K8", type: "ssr", server: "x", port: 1, password: "p", cipher: "aes-128-gcm", obfs: "plain", protocol: "origin" },
-        { name: "K9", type: "ssr", server: "x", port: 1, password: "p", cipher: "none", obfs: "bogus", protocol: "origin" },
-        // hysteria faketcp → 隔离；up 不可解析 → 硬错误
-        { name: "K10", type: "hysteria", server: "x", port: 1, up: "10", down: "20", protocol: "faketcp" },
-        { name: "K11", type: "hysteria", server: "x", port: 1, up: "fast", down: "20" },
-        // shadowquic 仅 v2 → 隔离；未知版本串 → 硬错误
-        { name: "K12", type: "shadowquic", server: "x", port: 1, "quic-versions": ["v2"] },
-        { name: "K13", type: "shadowquic", server: "x", port: 1, "quic-versions": ["v9"] },
-        // snell v1+udp / version 越界 → 硬错误
-        { name: "K14", type: "snell", server: "x", port: 1, psk: "p", version: 1, udp: true },
-        { name: "K15", type: "snell", server: "x", port: 1, psk: "p", version: 9 },
-        // fingerprint 填浏览器名 → 构建期硬错误
-        { ...CONCORD_OK, name: "K16", fingerprint: "chrome" },
-        // REALITY 前提缺失 → 硬错误
-        { name: "K17", type: "vless", server: "x", port: 1, uuid: "u", "reality-opts": { "public-key": "A".repeat(43) }, "client-fingerprint": "chrome" },
-        { name: "K18", type: "vless", server: "x", port: 1, uuid: "u", tls: true, "reality-opts": { "public-key": "A".repeat(43) } },
-        { name: "K19", type: "vless", server: "x", port: 1, uuid: "u", tls: true, network: "ws", "client-fingerprint": "chrome", "reality-opts": { "public-key": "A".repeat(43) } },
-        // wireguard reserved 长度错 / 无本地地址 → 硬错误
-        { name: "K20", type: "wireguard", server: "x", port: 1, "private-key": "A".repeat(43) + "=", ip: "10.0.0.2", reserved: [1, 2] },
-        { name: "K21", type: "wireguard", server: "x", port: 1, "private-key": "A".repeat(43) + "=" },
-        // hysteria2 realm 互斥 → 硬错误；obfs 缺密码 → 硬错误
-        { name: "K22", type: "hysteria2", server: "x", port: 1, ports: "1000-2000", "realm-opts": { enable: true, "server-url": "https://r" } },
-        { name: "K23", type: "hysteria2", server: "x", port: 1, obfs: "salamander" },
-        // trojan ss-opts 空密码 → 硬错误；未知 method → 隔离
-        { name: "K24", type: "trojan", server: "x", port: 1, password: "p", "ss-opts": { enabled: true, password: "" } },
-        { name: "K25", type: "trojan", server: "x", port: 1, password: "p", "ss-opts": { enabled: true, password: "p", method: "bogus" } },
-        // tuic 无 token 且 uuid 非法 → 硬错误
-        { name: "K26", type: "tuic", server: "x", port: 1, uuid: "not-a-uuid", password: "p" },
-        // ssh RSA host-key → 隔离
-        { name: "K27", type: "ssh", server: "x", port: 1, username: "u", "host-key": ["ssh-rsa AAAA"] }
-    ];
-    const out = main({ proxies: [CONCORD_OK, ...bad] });
-    assert.deepEqual(concordNames(out), ["OK"], "构建期问题节点应全部剔除，实际保留: " + concordNames(out).join(","));
-    assert.equal(warnings.length, 0, "剔除过程应保持静默");
-});
-
-check("concord-dirty: 构建期可修复项被修复而非剔除", () => {
-    const { main } = loadConcordMain();
-    const out = main({
-        proxies: [
-            CONCORD_OK,
-            // ss 2022 密码正确 → 保留
-            { ...CONCORD_OK, name: "G1", cipher: "2022-blake3-aes-128-gcm", password: "AAAAAAAAAAAAAAAAAAAAAA==" },
-            // mieru transport 小写 → 规范化为 TCP 保留
-            { name: "G2", type: "mieru", server: "x", port: 1, transport: "tcp", username: "u", password: "p" },
-            // hysteria2 realm + dialer-proxy → 移除 dialer 保住节点（内核会隔离）
-            { name: "G3", type: "hysteria2", server: "x", port: 1, "dialer-proxy": "OK", "realm-opts": { enable: true, "server-url": "https://r" } },
-            // shadowquic v1+v2 共存 → 保留
-            { name: "G4", type: "shadowquic", server: "x", port: 1, "quic-versions": ["v1", "v2"] },
-            // fingerprint 合法 hex → 保留
-            { ...CONCORD_OK, name: "G5", fingerprint: "AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99:AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99" },
-            // tuic 合法 uuid → 保留
-            { name: "G6", type: "tuic", server: "x", port: 1, uuid: "b831381d-6324-4d53-ad4f-8cda48b30811", password: "p" }
-        ]
-    });
-    for (const name of ["G1", "G2", "G3", "G4", "G5", "G6"]) {
-        assert.ok(concordHas(out, name), name + " 应保留");
-    }
-    assert.equal(out.proxies.find(p => p.name === "G2").transport, "TCP");
-    assert.equal(out.proxies.find(p => p.name === "G3")["dialer-proxy"], undefined, "realm 节点的 dialer-proxy 应被移除");
-});
-
-check("concord-dirty: hosts 非法值与域名映射环被清洗", () => {
-    const { main } = loadConcordMain();
-    const out = main({
-        proxies: [CONCORD_OK],
-        hosts: {
-            "ok.lan": "192.168.1.1",
-            "obj.lan": { a: 1 },
-            "null.lan": null,
-            "arr.lan": ["1.2.3.4", "lan"],
-            "multi.lan": ["1.2.3.4", "5.6.7.8"],
-            "alias.lan": ["1.2.3.4", "other.lan"],
-            "cyc-a.lan": "cyc-b.lan",
-            "cyc-b.lan": "cyc-a.lan",
-            "self.lan": "self.lan",
-            "chain.lan": "ok.lan",
-            "ext.lan": "example.com"
-        }
-    });
-    assert.equal(out.hosts["ok.lan"], "192.168.1.1");
-    assert.equal(out.hosts["obj.lan"], undefined, "对象值应剔除");
-    assert.equal(out.hosts["null.lan"], undefined, "null 值应剔除");
-    assert.equal(out.hosts["arr.lan"], undefined, "数组含 lan 应剔除");
-    assert.deepEqual(out.hosts["multi.lan"], ["1.2.3.4", "5.6.7.8"], "多 IP 数组应保留");
-    assert.equal(out.hosts["alias.lan"], undefined, "多值含域名应剔除");
-    assert.equal(out.hosts["cyc-a.lan"], undefined, "环上条目应剔除");
-    assert.equal(out.hosts["cyc-b.lan"], undefined, "环上条目应剔除");
-    assert.equal(out.hosts["self.lan"], undefined, "自映射应剔除");
-    assert.equal(out.hosts["chain.lan"], "ok.lan", "指向存活条目的别名应保留");
-    assert.equal(out.hosts["ext.lan"], "example.com", "指向外部域名的别名应保留");
-
-    // 悬空别名级联删除：环删除后指向环的别名也应删除
-    const out2 = main({
-        proxies: [CONCORD_OK],
-        hosts: { "a.lan": "b.lan", "b.lan": "a.lan", "ref.lan": "a.lan" }
-    });
-    assert.equal(out2.hosts, undefined, "环与悬空别名全部删除后不应输出 hosts 段");
-});
-
-check("concord-dirty: 信息节点同样过校验，残缺信息节点不输出", () => {
-    const { main } = loadConcordMain();
-    const out = main({
-        proxies: [
-            CONCORD_OK,
-            // 信息节点且字段完整：输出但不进组
-            { name: "剩余流量：10GB", type: "ss", server: "1.1.1.9", port: 443, cipher: "aes-128-gcm", password: "p" },
-            // 信息节点且缺必填：剔除（否则内核解析它时整份拒绝）
-            { name: "到期时间：2026-12-31", type: "ss", server: "x", port: 1 }
-        ]
-    });
-    assert.ok(concordHas(out, "剩余流量：10GB"), "完整信息节点应输出");
-    assert.ok(!concordHas(out, "到期时间：2026-12-31"), "残缺信息节点应剔除");
-    assert.ok(!out["proxy-groups"].find(g => g.name === "静态").proxies.includes("剩余流量：10GB"), "信息节点不进可选组");
-});
-
-check("concord-dirty: wireguard peers 键名折叠、ports 解析、ss 未知插件、dialer→GLOBAL", () => {
-    const { main } = loadConcordMain();
-    const key = "A".repeat(43) + "=";
-    // peers 内下划线变体键应折叠后保留（内核对每个 peer 独立折叠）
-    const f1 = main({ proxies: [CONCORD_OK, { name: "W1", type: "wireguard", "private-key": key, ip: "10.0.0.2", peers: [{ server: "a", port: 1, "public-key": key, allowed_ips: ["0.0.0.0/0"] }] }] });
-    assert.ok(concordHas(f1, "W1"), "peers 下划线变体应折叠后保留");
-    // ports 非空时内核必解析，非法即整份拒绝（即使 port 合法）
-    const f2 = main({ proxies: [CONCORD_OK, { name: "H1", type: "hysteria2", server: "x", port: 443, password: "p", ports: "abc" }] });
-    assert.ok(!concordHas(f2, "H1"), "hy2 ports 非法应剔除");
-    const f2b = main({ proxies: [CONCORD_OK, { name: "H2", type: "hysteria", server: "x", port: 443, up: "10", down: "20", ports: "abc" }] });
-    assert.ok(!concordHas(f2b, "H2"), "hy1 ports 非法应剔除");
-    const f2c = main({ proxies: [CONCORD_OK, { name: "H3", type: "hysteria2", server: "x", password: "p", ports: "1000-2000,3000" }] });
-    assert.ok(concordHas(f2c, "H3"), "hy2 ports 合法应保留");
-    // ss 未知插件会被内核隔离告警，应剔除；合法插件与空插件保留
-    const f3 = main({ proxies: [CONCORD_OK, { ...CONCORD_OK, name: "S1", plugin: "simple-obfs" }, { ...CONCORD_OK, name: "S2", plugin: "obfs", "plugin-opts": { mode: "http" } }, { ...CONCORD_OK, name: "S3", plugin: "" }] });
-    assert.ok(!concordHas(f3, "S1"), "ss 未知插件应剔除");
-    assert.ok(concordHas(f3, "S2"), "ss 合法插件应保留");
-    assert.ok(concordHas(f3, "S3"), "ss 空插件应保留");
-    // dialer-proxy 指向 GLOBAL 内核会硬拒绝，应清理；指向 DIRECT 合法保留
-    const f4 = main({ proxies: [CONCORD_OK, { ...CONCORD_OK, name: "D1", server: "1.1.1.2", "dialer-proxy": "GLOBAL" }, { ...CONCORD_OK, name: "D2", server: "1.1.1.3", "dialer-proxy": "DIRECT" }] });
-    assert.equal(f4.proxies.find(p => p.name === "D1")["dialer-proxy"], undefined, "dialer→GLOBAL 应清理");
-    assert.equal(f4.proxies.find(p => p.name === "D2")["dialer-proxy"], "DIRECT", "dialer→DIRECT 应保留");
-});
-
-check("concord-dirty: 规范订阅仍零告警零剔除，输出结构完整", () => {
-    const { main, warnings } = loadConcordMain();
-    const out = main({
-        proxies: [
-            { name: "HK 01", type: "ss", server: "1.1.1.1", port: 443, cipher: "aes-128-gcm", password: "p" },
-            { name: "HK 02", type: "trojan", server: "t.example", port: 443, password: "p", sni: "t.example" },
-            { name: "JP 01", type: "vmess", server: "j.example", port: 443, uuid: "b831381d-6324-4d53-ad4f-8cda48b30811", cipher: "auto", tls: true, servername: "j.example", network: "ws", "ws-opts": { path: "/x" } },
-            { name: "US 01", type: "vless", server: "u.example", port: 443, uuid: "b831381d-6324-4d53-ad4f-8cda48b30811", tls: true, servername: "u.example", flow: "xtls-rprx-vision", "client-fingerprint": "chrome", "reality-opts": { "public-key": "A".repeat(43), "short-id": "ab" } },
-            { name: "SG 01", type: "hysteria2", server: "s.example", port: 443, password: "p", sni: "s.example" },
-            { name: "TW 01", type: "wireguard", server: "w.example", port: 51820, "private-key": "A".repeat(43) + "=", "public-key": "B".repeat(43) + "=", ip: "10.0.0.2" }
-        ]
-    });
-    assert.equal(warnings.length, 0, "规范订阅不应有任何日志");
-    assert.equal(out.proxies.length, 6, "规范节点应全部保留");
-    for (const key of ["proxies", "proxy-groups", "rule-providers", "rules", "dns", "sniffer"]) {
-        assert.ok(out[key], "输出应包含 " + key);
-    }
 });
 
 console.log(`\nSummary: ${passed} passed, ${failed} failed`);

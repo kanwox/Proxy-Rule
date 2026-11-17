@@ -1,6 +1,6 @@
 # Concord
 
-适用于支持 JavaScript 扩展脚本的 Concord 内核客户端（如 FlClash），仅支持节点平铺订阅。Concord 是 Rust 实现的独立代理内核，配置采用 Clash 格式；本脚本与 Clash / Mihomo 版保持统一的分流策略，并针对 Concord 的字段支持范围做了净化适配。
+适用于支持 JavaScript 扩展脚本的 [Concord](https://github.com/chen08209/concord) 内核客户端（如 FlClash），仅支持节点平铺订阅。Concord 是 Rust 实现的独立代理内核，配置采用 Clash 格式；本脚本与 Clash / Mihomo 版保持统一的分流策略，并针对 Concord 的字段支持范围做了净化适配。
 
 ---
 
