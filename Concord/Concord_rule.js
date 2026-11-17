@@ -431,8 +431,8 @@ function main(params) {
         "keep-alive-idle": 300,
         "keep-alive-interval": 30
     };
-    // IPv6 仅订阅显式开启才开启（避免纯 IPv4 下双栈重试与 AAAA fake-ip 兼容问题）
-    const ipv6Enabled = params.ipv6 === true;
+    // IPv6 默认开启；订阅显式关闭则尊重（纯 IPv4 下双栈重试与 AAAA fake-ip 有兼容问题）
+    const ipv6Enabled = params.ipv6 !== false;
     params.ipv6 = ipv6Enabled;
     Object.assign(params, basicOptions);
     // 内核已移除该字段并会在启动时报错

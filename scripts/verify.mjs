@@ -152,10 +152,17 @@ check("quantumultx: [dns] 单行双 IP DoH、移除无效 server= 与 circle/128
         /^doh-server = https:\/\/223\.5\.5\.5\/dns-query, https:\/\/1\.12\.12\.12\/dns-query$/m
     );
     assertCirclePngFlags(qx, "QX");
+    const filterLocal = qx.slice(qx.indexOf("\n[filter_local]\n"));
+    assert.match(filterLocal, /^host, time\.apple\.com, direct$/m, "QX 应有对时域名本地直连规则");
+    assert.match(filterLocal, /^host-suffix, ntp\.org, direct$/m);
+    assert.ok(
+        filterLocal.indexOf("host, time.apple.com, direct") < filterLocal.indexOf("final, 兜底"),
+        "对时直连规则须位于 final 之前"
+    );
 });
 
 check("stash: provider benchmark-url、移除无效 dns 字段与 pre-matching、circle/128 PNG 图标", () => {
-    assert.match(stash, /^\s{4}benchmark-url:\s*http:\/\/www\.gstatic\.com\/generate_204$/m);
+    assert.match(stash, /^\s{4}benchmark-url:\s*https:\/\/www\.gstatic\.com\/generate_204$/m);
     const dnsBlock = stash.slice(stash.indexOf("\ndns:\n"), stash.indexOf("\nsniffer:\n"));
     assert.ok(!/^\s+enable:/m.test(dnsBlock), "Stash dns 不应包含 enable");
     assert.ok(!/^\s+enhanced-mode:/m.test(dnsBlock), "Stash dns 不应包含 enhanced-mode");
@@ -169,6 +176,15 @@ check("egern: 13 业务组与兜底组策略顺序一致、circle/128 PNG 图标
     const policyBlocks = egern.match(/policies:\s*\[主代理, DIRECT, HK, JP, SG, TW, US, 静态\]/g) || [];
     assert.equal(policyBlocks.length, 14, "Egern 13 个业务组 + 兜底组应全部使用 [主代理, DIRECT, ..., 静态]");
     assertCirclePngFlags(egern, "Egern");
+});
+
+check("egern: DNS 国内外拆分——国内 DoH、海外经代理、节点解析强制直连", () => {
+    const dnsBlock = egern.slice(egern.indexOf("\ndns:\n"), egern.indexOf("\nproxies: []\n"));
+    assert.ok(dnsBlock.includes("proxy_nameservers:"), "应配置 proxy_nameservers 固定节点解析，避免循环依赖");
+    assert.ok(dnsBlock.includes("https://1.1.1.1/dns-query"), "应配置海外 DoH 上游");
+    assert.ok(dnsBlock.includes("proxy_rule_set:"), "国内域名应按规则集拆分到国内上游");
+    assert.match(dnsBlock, /match: "\*"\n\s+value: foreign/, "兜底转发应指向海外上游组");
+    assert.ok(!/match: "\*"\n\s+value: china/.test(dnsBlock), "不应把全部域名转发到国内上游");
 });
 
 // 3. README 版本与平台说明一致性检查
@@ -420,6 +436,24 @@ check("clash-runtime: subDNS.hosts 正确迁移至顶层 params.hosts（顶层�
         "top.example": "8.8.8.8",
         "sub.example": "2.2.2.2"
     });
+});
+
+check("clash-runtime: IPv6 默认开启，订阅显式关闭/开启均被尊重", () => {
+    const { main } = loadClashMain();
+    const base = { proxies: [{ name: "HK 01", type: "ss", server: "1.1.1.1", port: 443 }] };
+
+    const out1 = main(JSON.parse(JSON.stringify(base)));
+    assert.equal(out1.ipv6, true, "未指定时 IPv6 应默认开启");
+    assert.equal(out1.dns.ipv6, true, "DNS IPv6 应跟随全局默认开启");
+    assert.equal(out1.dns["fake-ip-range6"], "fdfe:dcba:9876::/64", "默认开启时应输出 IPv6 fake-ip 段");
+
+    const out2 = main(Object.assign(JSON.parse(JSON.stringify(base)), { ipv6: false }));
+    assert.equal(out2.ipv6, false, "订阅显式关闭应被尊重");
+    assert.equal(out2.dns.ipv6, false);
+    assert.equal(out2.dns["fake-ip-range6"], undefined);
+
+    const out3 = main(Object.assign(JSON.parse(JSON.stringify(base)), { ipv6: true }));
+    assert.equal(out3.ipv6, true, "订阅显式开启应被尊重");
 });
 
 check("clash-runtime: 拒绝含 proxy-providers 的订阅", () => {

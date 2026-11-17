@@ -1,6 +1,6 @@
 # 使用说明：将 静态 组 urls 中的「订阅链接填写处」替换为真实订阅链接。
 ipv6: true
-proxy_latency_test_url: http://www.gstatic.com/generate_204
+proxy_latency_test_url: https://www.gstatic.com/generate_204
 direct_latency_test_url: http://wifi.vivo.com.cn/generate_204
 bypass_tunnel_proxy:
   - "192.168.0.0/16"
@@ -43,10 +43,34 @@ dns:
     china:
       - https://223.5.5.5/dns-query
       - https://1.12.12.12/dns-query
+    # 海外 DoH：IP 形式免引导解析，经代理规则出站
+    foreign:
+      - https://1.1.1.1/dns-query
+      - https://8.8.8.8/dns-query
+  # 节点解析强制直连国内 DoH（跳过 forward），防解析循环
+  proxy_nameservers:
+    - https://223.5.5.5/dns-query
+    - https://1.12.12.12/dns-query
   forward:
+    # 局域网/私网域名交给系统 DNS
+    - domain_suffix:
+        match: lan
+        value: system
+    - domain_suffix:
+        match: local
+        value: system
+    - domain_suffix:
+        match: home.arpa
+        value: system
+    # 国内域名走国内 DoH
+    - proxy_rule_set:
+        match: "https://cdn.jsdmirror.com/gh/Repcz/Tool@X/Egern/Rules/ChinaDomain.yaml"
+        value: china
+        update_interval: 604800
+    # 其余域名走海外 DoH
     - domain_wildcard:
         match: "*"
-        value: china
+        value: foreign
 
 proxies: []
 
