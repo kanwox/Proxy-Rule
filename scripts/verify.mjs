@@ -560,7 +560,23 @@ check("concord-contract: 不兼容告警源被静默清除（顶层/分段/节�
             { name: "KP", type: "vmess", server: "x", port: 1, uuid: "u", cipher: "auto", network: "kcp" },
             { name: "ST", type: "vless", server: "x", port: 1, uuid: "u", "restls-opts": { password: "p" } },
             { name: "PL", type: "ss", server: "x", port: 1, cipher: "aes-128-gcm", password: "p", plugin: "kcptun" },
-            { name: "FP", type: "trojan", server: "x", port: 443, password: "p", "client-fingerprint": "chrome_psk" }
+            { name: "FP", type: "trojan", server: "x", port: 443, password: "p", "client-fingerprint": "chrome_psk" },
+            { name: "XD", type: "vless", server: "x", port: 1, uuid: "u", network: "xhttp", "xhttp-opts": { "download-settings": { "restls-opts": { password: "p" } } } },
+            { name: "XF", type: "vless", server: "x", port: 1, uuid: "u", tls: true, network: "xhttp", "xhttp-opts": { "download-settings": { "client-fingerprint": "randomized" } } },
+            { name: "MU", type: "mieru", server: "x", port: 1, transport: "UDP", username: "u", password: "p", "dialer-proxy": "OK" },
+            { name: "RE", type: "vless", server: "x", port: 1, uuid: "u", network: "ws", "reality-opts": {} },
+            { name: "RH", type: "vless", server: "x", port: 1, uuid: "u", tls: true, network: "httpupgrade", "reality-opts": { "public-key": "A".repeat(43) } },
+            { name: "HO", type: "hysteria", server: "x", port: 1, up: "10", down: "50", "obfs-protocol": "faketcp" },
+            { name: "H2R", type: "hysteria2", server: "x", port: 1, password: "p", ports: "1000-2000", "realm-opts": { enable: true, "server-url": "https://r.test" } },
+            { name: "H2D", type: "hysteria2", server: "x", port: 1, password: "p", "dialer-proxy": "OK", "realm-opts": { enable: true, "server-url": "https://r.test" } },
+            { name: "H2OFF", type: "hysteria2", server: "x", port: 1, password: "p", ports: "1000-2000", "dialer-proxy": "OK", "realm-opts": { enable: false } },
+            { name: "SN6", type: "snell", server: "x", port: 1, psk: "short", version: 6 },
+            { name: "SN6O", type: "snell", server: "x", port: 1, psk: "psk-12-bytes!!", version: 6, "obfs-opts": { mode: "tls" } },
+            { name: "SNR", type: "snell", server: "x", port: 1, psk: "p", version: 4, "obfs-opts": { mode: "restls" } },
+            { name: "SNU", type: "snell", server: "x", port: 1, psk: "p", version: 1, udp: true },
+            { name: "SNC", type: "ss", server: "x", port: 1, cipher: "made-up-cipher", password: "p" },
+            { name: "SNE", type: "ss", server: "x", port: 1, cipher: "aes-128-gcm", password: "p", plugin: "v2ray-plugin", "plugin-opts": { mode: "websocket", tls: true, "ech-opts": { enable: true } } },
+            { name: "SNEOFF", type: "ss", server: "x", port: 1, cipher: "aes-128-gcm", password: "p", plugin: "v2ray-plugin", "plugin-opts": { mode: "websocket", tls: true, "ech-opts": { enable: false } } }
         ],
         "geodata-mode": true,
         "global-client-fingerprint": "chrome",
@@ -578,9 +594,21 @@ check("concord-contract: 不兼容告警源被静默清除（顶层/分段/节�
     });
     // 不支持节点被剔除（内核会隔离并告警）
     const names = out.proxies.map(p => p.name);
-    assert.deepEqual(names.filter(n => ["TS", "KP", "ST", "PL"].includes(n)), [], "不支持节点应剔除");
-    // 废弃指纹被改写（内核会告警）
+    assert.deepEqual(
+        names.filter(n => ["TS", "KP", "ST", "PL", "XD", "RH", "HO", "H2R", "H2D", "SN6", "SN6O", "SNR", "SNU", "SNC", "SNE"].includes(n)),
+        [],
+        "不支持节点应剔除"
+    );
+    // 内核可构建的节点不得误删：mieru UDP+前置代理、空壳 reality、realm 未启用、ECH 显式关闭
+    for (const kept of ["MU", "RE", "H2OFF", "SNEOFF"]) {
+        assert.ok(names.includes(kept), kept + " 内核可构建，不应误删");
+    }
+    // 废弃指纹被改写（内核会告警），含 xhttp download-settings 内的指纹
     assert.equal(out.proxies.find(p => p.name === "FP")["client-fingerprint"], "chrome");
+    assert.equal(
+        out.proxies.find(p => p.name === "XF")["xhttp-opts"]["download-settings"]["client-fingerprint"],
+        "random"
+    );
     // 顶层 T2 死键消失；客户端自管设置与未知键按新脚本设计保留透传
     for (const key of ["geodata-mode", "global-client-fingerprint", "listeners", "external-ui"]) {
         assert.equal(out[key], undefined, key + " 应被剔除");

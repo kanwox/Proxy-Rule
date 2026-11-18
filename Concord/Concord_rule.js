@@ -1,10 +1,11 @@
-// Concord_rule.js V1.1
+// Concord_rule.js V1.2
 // Concord 内核（https://github.com/chen08209/concord）的订阅覆写脚本。
 // Concord 是独立的代理内核，配置采用 Clash 格式；本脚本从节点平铺的订阅
 // 生成地区组、应用分流与 fake-ip DNS。
 // 订阅中内核不支持的字段按黑名单静默丢弃，未知键保留；
 // 客户端自管设置原样透传，仅删除内核不应用的死键（不改变任何生效设置）。
-// 黑名单来源：concord crates/config/src/keys.rs、proxy/parse.rs、docs/compatibility.md。
+// 净化依据：concord crates/config/src/keys.rs、proxy/parse.rs 与 crates/proxy 节点构建行为
+// （2026-11-18 按内核源码复核；docs/compatibility.md 滞后于代码时以代码为准）。
 // 首次启动联网下载规则集，在日志确认全部下载成功。
 
 // ── 可调参数（集中维护） ──
@@ -31,6 +32,21 @@ const isPlainObject = value =>
     value &&
     typeof value === "object" &&
     !Array.isArray(value);
+
+// UTF-8 字节数：snell 的 PSK/userkey 长度限制按字节计，不是 JS 字符数
+const utf8Bytes = str => {
+    let n = 0;
+    for (let i = 0; i < str.length; i++) {
+        const c = str.charCodeAt(i);
+        if (c < 0x80) n += 1;
+        else if (c < 0x800) n += 2;
+        else if (c >= 0xd800 && c <= 0xdbff && i + 1 < str.length) {
+            n += 4;
+            i++;
+        } else n += 3;
+    }
+    return n;
+};
 
 // ── 字段净化：黑名单与节点级助手 ──
 // 只处理订阅透传内容；黑名单外的未知键保留
@@ -100,14 +116,19 @@ const CONCORD_TLS_OPT_DROP = ["restls-opts", "tlsmirror-opts"];
 // 不支持的 ss 插件（parse.rs T2_SS_PLUGINS）
 const CONCORD_SS_PLUGIN_DROP = new Set(["restls", "kcptun"]);
 
-// Concord 不支持的 ss 加密方式
-const CONCORD_SS_CIPHER_DROP = new Set([
-    "aes-192-gcm", "aes-192-ccm", "chacha8-ietf-poly1305",
-    "xchacha8-ietf-poly1305", "rabbit128-poly1305", "aegis-128l",
-    "aegis-256", "aez-384", "deoxys-ii-256-128",
-    "lea-128-gcm", "lea-192-gcm", "lea-256-gcm",
-    "ascon128", "ascon128a",
-    "2022-blake3-aes-128-ccm", "2022-blake3-aes-256-ccm"
+// ss 加密白名单（proxy/src/ss/crypto.rs parse_method + legacy 的 chacha20/xchacha20）：
+// 内核按白名单构建，名单外一律拒绝；黑名单盖不住未知加密名，故改用白名单
+const CONCORD_SS_CIPHER_OK = new Set([
+    "none",
+    "aes-128-gcm", "aes-256-gcm",
+    "aes-128-ccm", "aes-256-ccm",
+    "aes-128-gcm-siv", "aes-256-gcm-siv",
+    "chacha20-ietf-poly1305", "xchacha20-ietf-poly1305",
+    "2022-blake3-aes-128-gcm", "2022-blake3-aes-256-gcm",
+    "2022-blake3-chacha20-poly1305", "2022-blake3-chacha8-poly1305",
+    "aes-128-ctr", "aes-192-ctr", "aes-256-ctr",
+    "aes-128-cfb", "aes-192-cfb", "aes-256-cfb",
+    "rc4-md5", "chacha20-ietf", "chacha20", "xchacha20"
 ]);
 
 // Concord 不支持的 DNS 上游协议（剔除后清空的 policy 键会成 REFUSED 黑洞）
@@ -121,8 +142,12 @@ const concordNodeSupported = proxy => {
         return false;
     }
 
-    const download = isPlainObject(proxy["download-settings"])
-        ? proxy["download-settings"]
+    // download-settings 嵌套在 xhttp-opts 下（parse.rs xhttp_download），顶层并无此键
+    const xhttp = isPlainObject(proxy["xhttp-opts"])
+        ? proxy["xhttp-opts"]
+        : {};
+    const download = isPlainObject(xhttp["download-settings"])
+        ? xhttp["download-settings"]
         : {};
     if (
         CONCORD_TLS_OPT_DROP.some(
@@ -136,41 +161,81 @@ const concordNodeSupported = proxy => {
         const plugin = String(proxy.plugin || "").toLowerCase();
         if (CONCORD_SS_PLUGIN_DROP.has(plugin)) return false;
         if (
-            CONCORD_SS_CIPHER_DROP.has(
+            !CONCORD_SS_CIPHER_OK.has(
                 String(proxy.cipher || "").toLowerCase()
             )
         ) {
             return false;
         }
-        // v2ray-plugin + ech-opts：构建时拒绝
-        if (plugin === "v2ray-plugin" && proxy["ech-opts"]) return false;
+        // v2ray-plugin 的 ECH 位于 plugin-opts 内；仅"插件启用 TLS 且 ECH 启用"
+        // 才触及构建限制（docs/compatibility.md）；显式关闭或顶层误放的键不影响节点
+        if (plugin === "v2ray-plugin") {
+            const popts = isPlainObject(proxy["plugin-opts"])
+                ? proxy["plugin-opts"]
+                : {};
+            const ech = isPlainObject(popts["ech-opts"])
+                ? popts["ech-opts"]
+                : {};
+            if (popts.tls === true && ech.enable === true) return false;
+        }
     }
 
-    // REALITY over ws：无法构建可用节点
+    // REALITY 以 public-key 非空为启用；内核仅允许 tcp/grpc/h2/http/xhttp，
+    // ws 与 httpupgrade 构建时拒绝（proxy/src/link.rs）；空壳 reality-opts 不影响节点
+    const reality = isPlainObject(proxy["reality-opts"])
+        ? proxy["reality-opts"]
+        : {};
+    const network = String(proxy.network || "").toLowerCase();
     if (
-        proxy["reality-opts"] &&
-        String(proxy.network || "").toLowerCase() === "ws"
+        typeof reality["public-key"] === "string" &&
+        reality["public-key"] !== "" &&
+        (network === "ws" || network === "httpupgrade")
     ) {
         return false;
     }
-    // Hysteria faketcp 不支持
-    if (
-        type === "hysteria" &&
-        String(proxy.protocol || "").toLowerCase() === "faketcp"
-    ) {
-        return false;
+    // Hysteria faketcp 不支持：内核取 obfs-protocol 优先、protocol 兜底
+    if (type === "hysteria") {
+        const proto = String(
+            proxy["obfs-protocol"] || proxy.protocol || ""
+        ).toLowerCase();
+        if (proto === "faketcp") return false;
     }
-    // mieru UDP 传输 + dialer-proxy：构建时拒绝
-    if (
-        type === "mieru" &&
-        String(proxy.transport || "").toUpperCase() === "UDP" &&
-        proxy["dialer-proxy"]
-    ) {
-        return false;
+    // mieru UDP + dialer-proxy：内核 2026-11-18 起经 associate_via 支持，不再丢弃
+    // （docs/compatibility.md 仍写拒绝，为滞后表述）
+
+    // hysteria2 realm（enable: true）与端口跳跃 ports、dialer-proxy 均互斥；
+    // realm 未启用时两条限制都不生效（proxy/src/hysteria2/mod.rs）
+    if (type === "hysteria2") {
+        const realm = isPlainObject(proxy["realm-opts"])
+            ? proxy["realm-opts"]
+            : {};
+        if (realm.enable === true) {
+            if (String(proxy.ports || "").trim() !== "") return false;
+            if (proxy["dialer-proxy"]) return false;
+        }
     }
-    // hysteria2 realm-opts + dialer-proxy：构建时拒绝
-    if (type === "hysteria2" && proxy["realm-opts"] && proxy["dialer-proxy"]) {
-        return false;
+
+    // snell 构建期限制（proxy/src/snell/mod.rs validate）：
+    // version 0 按 1、5 按 4 处理；v1/v2 不支持 UDP；v6 PSK 须 12–255 字节、
+    // userkey 至多 255 字节，且拒绝 simple-obfs tls/http；restls 任何版本都不支持
+    if (type === "snell") {
+        const rawVersion = Number(proxy.version) || 0;
+        const version =
+            rawVersion === 0 ? 1 : rawVersion === 5 ? 4 : rawVersion;
+        const obfs = isPlainObject(proxy["obfs-opts"])
+            ? proxy["obfs-opts"]
+            : {};
+        const obfsMode = String(obfs.mode || "");
+        if (obfsMode === "restls") return false;
+        if ((version === 1 || version === 2) && proxy.udp === true) {
+            return false;
+        }
+        if (version === 6) {
+            const pskLen = utf8Bytes(String(proxy.psk || ""));
+            if (pskLen < 12 || pskLen > 255) return false;
+            if (utf8Bytes(String(proxy.userkey || "")) > 255) return false;
+            if (obfsMode === "tls" || obfsMode === "http") return false;
+        }
     }
 
     return true;
@@ -227,6 +292,21 @@ const concordNormalizeNode = proxy => {
         if (/^chrome/i.test(fp)) proxy["client-fingerprint"] = "chrome";
         else if (fp.toLowerCase() === "randomized") {
             proxy["client-fingerprint"] = "random";
+        }
+    }
+
+    // xhttp download-settings 内的指纹同样参与废弃名告警（proxy/warn.rs）
+    const xhttpOpts = isPlainObject(proxy["xhttp-opts"])
+        ? proxy["xhttp-opts"]
+        : {};
+    if (isPlainObject(xhttpOpts["download-settings"])) {
+        const target = xhttpOpts["download-settings"];
+        const dfp = target["client-fingerprint"];
+        if (typeof dfp === "string") {
+            if (/^chrome/i.test(dfp)) target["client-fingerprint"] = "chrome";
+            else if (dfp.toLowerCase() === "randomized") {
+                target["client-fingerprint"] = "random";
+            }
         }
     }
 
