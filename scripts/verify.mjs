@@ -200,7 +200,7 @@ check("readmes: 根目录与各端 README 版本及特性描述准确", () => {
     assert.ok(!egernReadme.includes("iOS / macOS / tvOS"));
     assert.ok(readUtf8("Stash/README.md").includes("iOS 3.6+"));
     assert.ok(readUtf8("Stash/README.md").includes("macOS 4.3+"));
-    assert.ok(readUtf8("Loon/README.md").includes("iOS 3.1.7+"));
+    assert.ok(readUtf8("Loon/README.md").includes("iOS 3.2.3 (754)+"));
     assert.ok(readUtf8("Shadowrocket/README.md").includes("2.2.66 (2649)+"));
 });
 
@@ -456,6 +456,30 @@ check("clash-runtime: IPv6 默认开启，订阅显式关闭/开启均被尊重"
     assert.equal(out3.ipv6, true, "订阅显式开启应被尊重");
 });
 
+check("clash-runtime: dialer-proxy 悬空引用、改名引用与成环被校正", () => {
+    const { main } = loadClashMain();
+    const out = main({
+        proxies: [
+            { name: "A", type: "ss", server: "1.1.1.1", port: 443, "dialer-proxy": "B" },
+            { name: "B", type: "ss", server: "1.1.1.2", port: 443, "dialer-proxy": "A" },
+            { name: "D", type: "ss", server: "1.1.1.3", port: 443, "dialer-proxy": "Gone" },
+            { name: "E", type: "ss", server: "1.1.1.4", port: 443, "dialer-proxy": "A" },
+            { name: "G", type: "ss", server: "1.1.1.5", port: 443, "dialer-proxy": "主代理" },
+            { name: "HK", type: "ss", server: "1.1.1.6", port: 443 },
+            { name: "Z", type: "ss", server: "1.1.1.7", port: 443, "dialer-proxy": "HK" }
+        ]
+    });
+    const byName = new Map(out.proxies.map(proxy => [proxy.name, proxy]));
+
+    assert.equal(byName.get("A")["dialer-proxy"], undefined, "A↔B 环应断开");
+    assert.equal(byName.get("B")["dialer-proxy"], undefined, "A↔B 环应断开");
+    assert.equal(byName.get("D")["dialer-proxy"], undefined, "悬空引用应删除");
+    assert.equal(byName.get("E")["dialer-proxy"], "A", "有效引用应保留");
+    assert.equal(byName.get("G")["dialer-proxy"], "主代理", "指向策略组的引用应保留");
+    assert.equal(byName.get("Z")["dialer-proxy"], "节点·HK", "指向被改名节点的引用应改到新名字");
+    assert.ok(byName.has("节点·HK"), "与保留名冲突的节点应改名");
+});
+
 check("clash-runtime: 拒绝含 proxy-providers 的订阅", () => {
     const { main } = loadClashMain();
     assert.throws(
@@ -583,6 +607,7 @@ check("concord-contract: 不兼容告警源被静默清除（顶层/分段/节�
         listeners: [{ name: "l", type: "mixed", port: 1 }],
         "external-ui": "ui",
         "external-controller": "127.0.0.1:9090",
+        "bind-address": "192.168.1.2",
         secret: "x",
         "unknown-key": 1,
         tun: { enable: true, stack: "mixed", gso: true, "dns-mode": "hijack", mtu: 9000 },
@@ -615,9 +640,10 @@ check("concord-contract: 不兼容告警源被静默清除（顶层/分段/节�
     }
     assert.equal(out["external-controller"], "127.0.0.1:9090", "客户端自管设置应透传");
     assert.equal(out.secret, "x", "客户端自管设置应透传");
+    assert.equal(out["bind-address"], "192.168.1.2", "客户端自管设置应透传");
     assert.equal(out["unknown-key"], 1, "黑名单外的未知键应保留");
-    // tun 死键消失，生效设置继承（stack 是生效设置，mixed 保留）
-    assert.equal(out.tun.gso, undefined);
+    // tun 死键消失，生效设置继承（stack/gso 是生效设置，mixed/true 保留）
+    assert.equal(out.tun.gso, true, "受支持的 tun.gso 应透传");
     assert.equal(out.tun["dns-mode"], undefined);
     assert.equal(out.tun.stack, "mixed", "生效的 tun.stack 应透传");
     assert.equal(out.tun.mtu, 9000, "合法 tun 设置应继承");

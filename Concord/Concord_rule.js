@@ -1,4 +1,4 @@
-// Concord_rule.js V1.2
+// Concord_rule.js V1.3
 // Concord 内核（https://github.com/chen08209/concord）的订阅覆写脚本。
 // Concord 是独立的代理内核，配置采用 Clash 格式；本脚本从节点平铺的订阅
 // 生成地区组、应用分流与 fake-ip DNS。
@@ -56,7 +56,7 @@ const utf8Bytes = str => {
 const CONCORD_TOP_DROP = [
     "geodata-mode", "listeners", "tunnels", "ss-config", "vmess-config",
     "tuic-server", "iptables", "clash-for-android", "inbound-tfo",
-    "inbound-mptcp", "bind-address",
+    "inbound-mptcp",
     "external-controller-pipe", "external-controller-unix",
     "external-controller-tls", "external-controller-routing-mark",
     "external-ui", "external-ui-url", "external-ui-name",
@@ -67,9 +67,9 @@ const CONCORD_TOP_DROP = [
 // 客户端设置段落中 Concord 不应用的死键：删除不改变任何生效设置，仅消除忽略告警。
 // 内核读取并生效的设置（allow-lan、LAN 名单、tun.stack、端口等）不在此列
 
-// tun（keys.rs TUN_T2 + gso）
+// tun（keys.rs TUN_T2）
 const CONCORD_TUN_DROP = [
-    "gso", "dns-mode", "gso-max-size", "inet6-address",
+    "dns-mode", "gso-max-size", "inet6-address",
     "iproute2-table-index", "iproute2-rule-index", "auto-redirect",
     "auto-redirect-input-mark", "auto-redirect-output-mark",
     "auto-redirect-iproute2-fallback-rule-index", "loopback-address",

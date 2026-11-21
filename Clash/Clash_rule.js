@@ -1,4 +1,4 @@
-// Clash_rule.js V5.6
+// Clash_rule.js V5.7
 // 需较新的 mihomo 内核；首次启动联网下载规则集，在日志确认全部下载成功。
 
 // ── 可调参数（集中维护） ──
@@ -282,9 +282,11 @@ function main(params) {
     ]);
 
     const usedProxyNames = new Set();
+    const proxyRenames = new Map();
 
     params.proxies.forEach(proxy => {
         let name = proxy.name;
+        const originalName = name;
 
         if (RESERVED_NAMES.has(name) || usedProxyNames.has(name)) {
             const reservedHit = RESERVED_NAMES.has(name);
@@ -305,7 +307,18 @@ function main(params) {
             proxy.name = name;
         }
 
+        if (name !== originalName && !proxyRenames.has(originalName)) {
+            proxyRenames.set(originalName, name);
+        }
+
         usedProxyNames.add(name);
+    });
+
+    // 旧名仍被最终节点占用时不改写引用：此时旧名指向原节点而非被改名的副本
+    const finalProxyNames = new Set(params.proxies.map(proxy => proxy.name));
+
+    [...proxyRenames.keys()].forEach(oldName => {
+        if (finalProxyNames.has(oldName)) proxyRenames.delete(oldName);
     });
 
     // 自然排序：名字中的连续数字段按数值比较，保证多位数序号排在个位数之后。
@@ -1047,6 +1060,64 @@ function main(params) {
             "[Clash_rule.js] 订阅节点全部被 excludeFilter 过滤，「静态」组已填充 REJECT 占位，需代理的流量将被拒绝，直连规则不受影响；请检查 excludeFilter 或节点命名。"
         );
     }
+
+    // dialer-proxy 在连接时按名字查找前置代理：旧名已不再命中任何目标时，
+    // 若它对应一个被改名的节点则改到新名字；悬空引用删除，节点之间的环断开；
+    // 组与内建策略只作为端点，不参与环检测
+    const fixDialerProxies = (proxies, groupList) => {
+        const known = new Set([
+            ...proxies.map(proxy => proxy.name),
+            ...groupList.map(group => group.name),
+            ...BUILTIN_POLICIES
+        ]);
+
+        proxies.forEach(proxy => {
+            const target = proxy["dialer-proxy"];
+
+            if (typeof target !== "string" || target === "") return;
+
+            const renamed = proxyRenames.get(target);
+
+            if (!known.has(target) && renamed !== undefined) {
+                proxy["dialer-proxy"] = renamed;
+            }
+
+            if (!known.has(proxy["dialer-proxy"])) {
+                delete proxy["dialer-proxy"];
+            }
+        });
+
+        const byName = new Map(proxies.map(proxy => [proxy.name, proxy]));
+        const done = new Set();
+
+        proxies.forEach(proxy => {
+            if (done.has(proxy.name)) return;
+
+            const path = [];
+            const onPath = new Set();
+            let cur = proxy.name;
+
+            while (byName.has(cur) && !done.has(cur)) {
+                if (onPath.has(cur)) {
+                    for (let i = path.indexOf(cur); i < path.length; i++) {
+                        delete byName.get(path[i])["dialer-proxy"];
+                    }
+                    break;
+                }
+
+                onPath.add(cur);
+                path.push(cur);
+
+                const next = byName.get(cur)["dialer-proxy"];
+                if (typeof next !== "string" || next === "") break;
+                cur = next;
+            }
+
+            path.forEach(name => done.add(name));
+        });
+    };
+
+    fixDialerProxies(params.proxies, groups);
 
     params["proxy-groups"] = groups;
 
