@@ -1,0 +1,163 @@
+# 每周定时与手动触发：检查仓库中引用的上游远程规则集、脚本与图标 URL 存活性
+# 不在 push / pull_request 触发，确保 PR CI 100% 离线且确定性通过
+name: Check Upstream URLs
+
+on:
+  schedule:
+    - cron: '0 3 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check-urls:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 26
+
+      - name: Verify upstream URLs
+        run: |
+          node --input-type=module <<'EOF'
+          import fs from "node:fs";
+          import vm from "node:vm";
+
+          const FILES = [
+            "README.md",
+            "Clash/Clash_rule.js",
+            "Concord/Concord_rule.js",
+            "Surge/Surge.conf",
+            "Surfboard/Surfboard.conf",
+            "Loon/Loon.conf",
+            "Shadowrocket/Shadowrocket.conf",
+            "QuantumultX/QuantumultX.conf",
+            "Stash/Stash.yaml",
+            "Egern/Egern.yaml"
+          ];
+
+          const CDN_URL_RE = /https:\/\/cdn\.jsdmirror\.com\/gh\/[^\s"'`,)>]+/g;
+          const GH_MIRROR_RE = /^https:\/\/cdn\.jsdmirror\.com\/gh\/([^/]+)\/([^/@]+)@([^/]+)\/(.+)$/;
+
+          const cdnUrls = new Set();
+
+          for (const file of FILES) {
+            const text = fs.readFileSync(file, "utf8");
+            for (const match of text.matchAll(CDN_URL_RE)) {
+              const url = match[0];
+              if (url.includes("${")) continue;
+              if (url.endsWith("/IconSet/Color") || url.endsWith("/circle/128") || url.endsWith("/geo")) continue;
+              cdnUrls.add(url);
+            }
+          }
+
+          // 执行 Clash_rule.js 与 Concord_rule.js 以覆盖模板动态拼接的规则集与 23 地区图标 URL
+          const regionSeed = [
+            "UAE", "AR", "AU", "BD", "BR", "CA", "DE", "FR", "GB", "HK", "ID", "IN",
+            "JP", "KR", "MY", "NL", "PH", "SG", "TH", "TR", "TW", "US", "VN"
+          ];
+          const sampleProxies = regionSeed.flatMap((code, idx) => [
+            { name: `${code} 01`, type: "ss", server: `1.1.${idx + 1}.1`, port: 443, cipher: "aes-128-gcm", password: "p" },
+            { name: `${code} 02`, type: "ss", server: `1.1.${idx + 1}.2`, port: 443, cipher: "aes-128-gcm", password: "p" }
+          ]);
+
+          function collectStrings(value) {
+            if (typeof value === "string") {
+              if (value.startsWith("https://cdn.jsdmirror.com/gh/")) cdnUrls.add(value);
+              return;
+            }
+            if (Array.isArray(value)) {
+              for (const item of value) collectStrings(item);
+            } else if (value && typeof value === "object") {
+              for (const item of Object.values(value)) collectStrings(item);
+            }
+          }
+
+          for (const scriptPath of ["Clash/Clash_rule.js", "Concord/Concord_rule.js"]) {
+            const sandbox = { console: { warn: () => {}, log: () => {} } };
+            vm.createContext(sandbox);
+            vm.runInContext(fs.readFileSync(scriptPath, "utf8"), sandbox);
+            const out = sandbox.main({ proxies: structuredClone(sampleProxies) });
+            collectStrings(out);
+          }
+
+          const sortedUrls = [...cdnUrls].sort();
+          console.log(`Discovered ${sortedUrls.length} unique cdn.jsdmirror.com/gh URLs.`);
+
+          async function fetchWithRetry(url, retries = 3) {
+            let lastError = null;
+            for (let attempt = 1; attempt <= retries; attempt++) {
+              try {
+                let res = await fetch(url, {
+                  method: "HEAD",
+                  redirect: "follow",
+                  signal: AbortSignal.timeout(15000)
+                });
+                if (res.status === 405 || res.status === 501) {
+                  res = await fetch(url, {
+                    method: "GET",
+                    redirect: "follow",
+                    signal: AbortSignal.timeout(15000)
+                  });
+                }
+                if (res.ok) return { ok: true, status: res.status };
+                lastError = `HTTP ${res.status}`;
+                if (res.status === 404 || res.status === 410) break;
+              } catch (err) {
+                lastError = err instanceof Error ? err.message : String(err);
+              }
+              if (attempt < retries) {
+                await new Promise(resolve => setTimeout(resolve, attempt * 1500));
+              }
+            }
+            return { ok: false, error: lastError };
+          }
+
+          const failures = [];
+          const mirrorWarnings = [];
+          const CONCURRENCY = 6;
+
+          async function checkOne(cdnUrl) {
+            const m = GH_MIRROR_RE.exec(cdnUrl);
+            if (!m) {
+              failures.push({ cdnUrl, rawUrl: "(invalid format)", error: "无法转换为 raw.githubusercontent.com URL" });
+              return;
+            }
+            const rawUrl = `https://raw.githubusercontent.com/${m[1]}/${m[2]}/${m[3]}/${m[4]}`;
+            const rawRes = await fetchWithRetry(rawUrl, 3);
+            if (!rawRes.ok) {
+              failures.push({ cdnUrl, rawUrl, error: rawRes.error });
+              console.error(`FAIL  ${rawUrl} (${rawRes.error})`);
+            } else {
+              console.log(`PASS  ${rawUrl} (${rawRes.status})`);
+            }
+
+            // 非阻塞检查 cdn.jsdmirror.com 镜像可达性，仅在 403/5xx 或网络异常时输出 warning
+            const cdnRes = await fetchWithRetry(cdnUrl, 1);
+            if (!cdnRes.ok) {
+              mirrorWarnings.push({ cdnUrl, error: cdnRes.error });
+              console.warn(`::warning::CDN mirror check failed (non-fatal): ${cdnUrl} (${cdnRes.error})`);
+            }
+          }
+
+          for (let i = 0; i < sortedUrls.length; i += CONCURRENCY) {
+            await Promise.all(sortedUrls.slice(i, i + CONCURRENCY).map(checkOne));
+          }
+
+          console.log(
+            `\nSummary: ${sortedUrls.length - failures.length} passed, ${failures.length} failed, ${mirrorWarnings.length} mirror warnings`
+          );
+          if (failures.length > 0) {
+            process.exit(1);
+          }
+          EOF

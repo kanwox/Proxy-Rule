@@ -29,4 +29,4 @@
 
 - **原生策略组**：通过 `policy-regex-filter` 自动按地区正则归类节点，五大地区组使用 `url-test`。
 - **免改配置**：直接复用客户端全局节点池，开箱即用。
-- **安全与拦截**：内置 DoH 加密 DNS、真实 IP 白名单与广告预匹配规则。
+- **安全与解析优化**：内置 IP 直连 DoH、`[Host]` 局域网解析、`private-ip-answer`、`block-quic = all-proxy` 与广告预匹配规则。

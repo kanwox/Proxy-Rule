@@ -1,6 +1,6 @@
 # Egern
 
-适用于 Egern 客户端（iOS / iPadOS）。
+适用于 Egern 客户端（iOS / iPadOS / macOS / tvOS）。
 
 ---
 
@@ -20,11 +20,11 @@
 ## 📖 使用方法
 
 1. 打开 [Egern.yaml](./Egern.yaml)。
-2. 将 `静态` 策略组中 `urls` 下的 `订阅链接填写处` 替换为真实订阅链接：
+2. 将 `静态` 策略组中 `urls` 下的 `订阅链接填写处` 替换为真实订阅链接（其余业务组与 `兜底` 通过 YAML 锚点自动复用）：
    ```yaml
    - select:
        name: 静态
-       urls:
+       urls: &sub_urls
          - "你的真实订阅链接"
    ```
 3. 导入 Egern 并启用配置。
@@ -33,6 +33,7 @@
 
 ## ✨ 核心特性
 
-- **原生 YAML**：基于 Egern 原生规范组织分流与策略。
+- **原生 YAML**：基于 Egern 原生规范组织分流与策略，开启策略切换自动断连（`close_connections_on_policy_change`），并在全部业务组与 `兜底` 中通过 YAML 1.2 锚点直接展开单节点。
 - **Smart 选优**：各地区组通过 `flatten` 展开节点，采用 `smart` 策略自动择优。
-- **规则集**：引用 Egern 专用 YAML 规则集，分流对齐主流服务与国内直连。
+- **DNS 层去广告与防污染**：在 `dns.forward` 中引入 `Reject.yaml` 实现 DNS 层拦截，并启用 `block_ips` 过滤污染回环响应，海外 DoH 经 `主代理` 强制出站。
+- **规则集与内联精简**：局域网、群晖（Synology）与 Apple TV+ 采用内联规则精准分流，国内 IP 使用原生 `geoip: CN`（`no_resolve: true`）避免误触发 DNS 解析。

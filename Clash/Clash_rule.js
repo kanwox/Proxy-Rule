@@ -7,7 +7,7 @@ const REGION_MIN_NODES = 2;        // 达到该值才建组
 const RS_INTERVAL = 604800;        // 规则集更新周期：一周
 const CN_DNS_DOH = [
     "https://223.5.5.5/dns-query",
-    "https://doh.pub/dns-query"
+    "https://1.12.12.12/dns-query"
 ];
 const CN_DNS_PLAIN = ["223.5.5.5", "119.29.29.29"];
 const TEST_URL_PROXY = "https://www.gstatic.com/generate_204";
@@ -26,7 +26,7 @@ const isPlainObject = value =>
     typeof value === "object" &&
     !Array.isArray(value);
 
-function main(params) {
+function main(params, profileName) {
     if (!params || typeof params !== "object") params = {};
     if (!Array.isArray(params.proxies)) params.proxies = [];
 
@@ -82,8 +82,7 @@ function main(params) {
         "override-destination": true,
         sniff: {
             HTTP: {
-                ports: [80, "8080-8880"],
-                "override-destination": true
+                ports: [80, "8080-8880"]
             },
             TLS: {
                 ports: [443, 8443]
@@ -93,14 +92,9 @@ function main(params) {
             }
         },
         "skip-domain": [
-            // "Mijia Cloud" 不是域名；现行内核对 skip-domain 按域名模式校验，单标签条目按精确匹配处理：
-            // 米家设备 SNI 恰好就是 "Mijia Cloud"，可命中并跳过嗅探；并非子串匹配，SNI 带前后缀时不生效
+            // 仅跳过官方建议的最小集合：米家设备非标准 SNI 与 Apple 推送长连，避免截断 Apple/AI 纯 IP 嗅探
             "Mijia Cloud",
-            "+.apple.com",
-            "+.openai.com",
-            "+.oaistatic.com",
-            "+.oaiusercontent.com",
-            "+.chatgpt.com"
+            "+.push.apple.com"
         ]
     };
 
@@ -116,122 +110,128 @@ function main(params) {
         "https://cdn.jsdmirror.com/gh/open-assets-hub/country-flag-collection@main/circle/128";
     const flagIcon = code => `${FLAG_ICON_BASE}/${code}.png`;
 
-    // 地区表。regex 仅在 JS 侧经 toJsRegex 转换使用
+    // 地区表。regex 与可选大小写敏感 codeRegex 仅在 JS 侧经 toJsRegex 转换使用
     const regions = [
         {
             name: "AE",
-            regex: "(?i)(阿联酋|阿聯酋|迪拜|阿布扎比|🇦🇪|(^|[^A-Za-z])UAE([^A-Za-z]|$)|Emirates|Dubai|Abu[ -]?Dhabi)",
+            regex: "(?i)(阿联酋|阿聯酋|迪拜|杜拜|阿布扎比|阿布達比|🇦🇪|(^|[^A-Za-z0-9])UAE([^A-Za-z]|$)|Emirates|Dubai|Abu[ -]?Dhabi)",
             icon: flagIcon("ae")
         },
         {
             name: "AR",
-            regex: "(?i)(阿根廷|布宜诺斯艾利斯|🇦🇷|(^|[^A-Za-z])AR([^A-Za-z]|$)|(^|[^A-Za-z])ARG([^A-Za-z]|$)|Argentina|Buenos[ -]?Aires)",
+            regex: "(?i)(阿根廷|布宜诺斯艾利斯|布宜諾斯艾利斯|🇦🇷|(^|[^A-Za-z0-9])ARG?([^A-Za-z]|$)|Argentina|Buenos[ -]?Aires)",
             icon: flagIcon("ar")
         },
         {
             name: "AU",
-            regex: "(?i)(澳大利亚|澳大利亞|澳洲|悉尼|墨尔本|墨爾本|🇦🇺|(^|[^A-Za-z])AU([^A-Za-z]|$)|(^|[^A-Za-z])AUS([^A-Za-z]|$)|Australia|Sydney|Melbourne|Brisbane|Perth|Adelaide)",
+            regex: "(?i)(澳大利亚|澳大利亞|澳洲|悉尼|雪梨|墨尔本|墨爾本|🇦🇺|(^|[^A-Za-z0-9])AUS?([^A-Za-z]|$)|Australia|Sydney|Melbourne|Brisbane|Perth|Adelaide)",
             icon: flagIcon("au")
         },
         {
             name: "BD",
-            regex: "(?i)(孟加拉|孟加拉國|达卡|達卡|🇧🇩|(^|[^A-Za-z])BD([^A-Za-z]|$)|(^|[^A-Za-z])BGD([^A-Za-z]|$)|Bangladesh|Dhaka)",
+            regex: "(?i)(孟加拉|孟加拉國|达卡|達卡|🇧🇩|(^|[^A-Za-z0-9])(BD|BGD)([^A-Za-z]|$)|Bangladesh|Dhaka)",
             icon: flagIcon("bd")
         },
         {
             name: "BR",
-            regex: "(?i)(巴西|圣保罗|聖保羅|🇧🇷|(^|[^A-Za-z])BR([^A-Za-z]|$)|(^|[^A-Za-z])BRA([^A-Za-z]|$)|Brazil|Brasil|(Sao|São)[ -]?Paulo|Rio[ -]?de[ -]?Janeiro|(^|[^A-Za-z])Rio([^A-Za-z]|$))",
+            regex: "(?i)(巴西|圣保罗|聖保羅|里约|里約|🇧🇷|(^|[^A-Za-z0-9])BRA?([^A-Za-z]|$)|Brazil|Brasil|(Sao|São)[ -]?Paulo|Rio[ -]?de[ -]?Janeiro|(^|[^A-Za-z0-9])Rio([^A-Za-z]|$))",
             icon: flagIcon("br")
         },
         {
             name: "CA",
-            regex: "(?i)(加拿大|多伦多|多倫多|温哥华|溫哥華|🇨🇦|(^|[^A-Za-z])CA([^A-Za-z]|$)|(^|[^A-Za-z])CAN([^A-Za-z]|$)|Canada|Toronto|Vancouver|Montreal|Calgary)",
+            regex: "(?i)(加拿大|多伦多|多倫多|温哥华|溫哥華|蒙特利尔|蒙特利爾|🇨🇦|(^|[^A-Za-z0-9])CAN([^A-Za-z]|$)|Canada|Toronto|Vancouver|Montreal|Calgary)",
+            codeRegex: "^(?!.*(?:美国|美國|美西|美东|美東|🇺🇸|(^|[^A-Za-z0-9])(?:US|USA|us|usa)([^A-Za-z]|$)|United[ -]?States|California|CALIFORNIA|Los[ -]?Angeles|San[ -]?Jose|Silicon[ -]?Valley|Fremont|San[ -]?Francisco|LAX|SJC)).*(^|[^A-Za-z0-9])CA([^A-Za-z]|$)",
             icon: flagIcon("ca")
         },
         {
             name: "DE",
-            regex: "(?i)(德国|德國|法兰克福|法蘭克福|🇩🇪|(^|[^A-Za-z])DE([^A-Za-z]|$)|(^|[^A-Za-z])DEU([^A-Za-z]|$)|Germany|Frankfurt|Berlin|Munich|Düsseldorf|Dusseldorf|Nuremberg)",
+            regex: "(?i)(德国|德國|法兰克福|法蘭克福|柏林|慕尼黑|🇩🇪|(^|[^A-Za-z0-9])DEU([^A-Za-z]|$)|Germany|Frankfurt|Berlin|Munich|Düsseldorf|Dusseldorf|Nuremberg)",
+            codeRegex: "^(?!.*RIO[ -]?DE[ -]?JANEIRO).*(^|[^A-Za-z0-9])DE([^A-Za-z]|$)",
             icon: flagIcon("de")
         },
         {
             name: "FR",
-            regex: "(?i)(法国|法國|巴黎|🇫🇷|(^|[^A-Za-z])FR([^A-Za-z]|$)|(^|[^A-Za-z])FRA([^A-Za-z]|$)|France|Paris|Marseille|Lyon)",
+            regex: "(?i)(法国|法國|巴黎|马赛|馬賽|里昂|🇫🇷|(^|[^A-Za-z0-9])FRA?([^A-Za-z]|$)|France|Paris|Marseille|Lyon)",
             icon: flagIcon("fr")
         },
         {
             name: "GB",
-            regex: "(?i)(英国|英國|伦敦|倫敦|🇬🇧|(^|[^A-Za-z])UK([^A-Za-z]|$)|(^|[^A-Za-z])GB([^A-Za-z]|$)|(^|[^A-Za-z])GBR([^A-Za-z]|$)|United[ -]?Kingdom|England|London|Manchester|Edinburgh)",
+            regex: "(?i)(英国|英國|伦敦|倫敦|曼彻斯特|曼徹斯特|🇬🇧|(^|[^A-Za-z0-9])(UK|GB|GBR)([^A-Za-z]|$)|United[ -]?Kingdom|England|London|Manchester|Edinburgh)",
             icon: flagIcon("gb")
         },
         {
             name: "HK",
-            regex: "(?i)(香港|九龙|🇭🇰|(^|[^A-Za-z])HK([^A-Za-z]|$)|(^|[^A-Za-z])HKG([^A-Za-z]|$)|Hong[ -]?Kong|Kowloon|Tsuen[ -]?Wan)",
+            regex: "(?i)(香港|九龙|九龍|🇭🇰|(^|[^A-Za-z0-9])HKG?([^A-Za-z]|$)|Hong[ -]?Kong|Kowloon|Tsuen[ -]?Wan)",
             icon: flagIcon("hk")
         },
         {
             name: "ID",
-            regex: "(?i)(印度尼西亚|印度尼西亞|印尼|雅加达|雅加達|🇮🇩|Indonesia|Jakarta|Surabaya|(^|[^A-Za-z])ID([^A-Za-z]|$)|(^|[^A-Za-z])IDN([^A-Za-z]|$))",
+            regex: "(?i)(印度尼西亚|印度尼西亞|印尼|雅加达|雅加達|🇮🇩|Indonesia|Jakarta|Surabaya|(^|[^A-Za-z0-9])IDN([^A-Za-z]|$))",
+            codeRegex: "^(?!.*(?:Node|NODE|node|Server|SERVER|server|Relay|RELAY|relay|Proxy|PROXY|proxy|User|USER|user|Client|CLIENT|client|Line|LINE|line|Group|GROUP|group|Device|DEVICE|device|Account|ACCOUNT|account|Host|HOST|host)[ _-]+ID([^A-Za-z]|$)).*(^|[^A-Za-z0-9])ID([^A-Za-z:=：]|$)",
             icon: flagIcon("id")
         },
         {
-            // 印度([^尼]|$) 只排除"印度尼西亚"；含独立 token IN 的节点名会同时命中 ID 与 IN，内核各组 filter 相互独立、无组间排除
             name: "IN",
-            regex: "(?i)(印度([^尼]|$)|新德里|孟买|孟買|班加罗尔|班加羅爾|🇮🇳|(^|[^A-Za-z])India([^A-Za-z]|$)|Mumbai|(New[ -]?)?Delhi|Bangalore|Chennai|Hyderabad|(^|[^A-Za-z])IN([^A-Za-z]|$)|(^|[^A-Za-z])IND([^A-Za-z]|$))",
+            regex: "(?i)(印度([^尼]|$)|新德里|孟买|孟買|班加罗尔|班加羅爾|🇮🇳|(^|[^A-Za-z0-9])India([^A-Za-z]|$)|Mumbai|(New[ -]?)?Delhi|Bangalore|Chennai|Hyderabad|(^|[^A-Za-z0-9])IND([^A-Za-z]|$))",
+            codeRegex: "^(?!.*(?:RELAY|DIRECT|MADE|SERVER|NODE|PROXY|FAST)[ _-]+IN([^A-Za-z]|$)).*(^|[^A-Za-z0-9])IN([^A-Za-z]|$)",
             icon: flagIcon("in")
         },
         {
             name: "JP",
-            regex: "(?i)(日本|东京|東京|大阪|名古屋|福冈|🇯🇵|(^|[^A-Za-z])JP([^A-Za-z]|$)|(^|[^A-Za-z])JPN([^A-Za-z]|$)|Japan|Tokyo|Osaka|Narita|Haneda|Kyoto|Fukuoka|Nagoya|Sapporo)",
+            regex: "(?i)(日本|东京|東京|大阪|名古屋|福冈|福岡|札幌|京都|🇯🇵|(^|[^A-Za-z0-9])JPN?([^A-Za-z]|$)|Japan|Tokyo|Osaka|Narita|Haneda|Kyoto|Fukuoka|Nagoya|Sapporo)",
             icon: flagIcon("jp")
         },
         {
             name: "KR",
-            regex: "(?i)(韩国|韓國|南韩|南韓|首尔|首爾|🇰🇷|(^|[^A-Za-z])KR([^A-Za-z]|$)|(^|[^A-Za-z])KOR([^A-Za-z]|$)|Korea|Seoul|Busan|Incheon|Chuncheon)",
+            regex: "(?i)(韩国|韓國|南韩|南韓|首尔|首爾|釜山|仁川|🇰🇷|(^|[^A-Za-z0-9])(KR|KOR)([^A-Za-z]|$)|Korea|Seoul|Busan|Incheon|Chuncheon)",
             icon: flagIcon("kr")
         },
         {
             name: "MY",
-            regex: "(?i)(马来西亚|馬來西亞|吉隆坡|🇲🇾|(^|[^A-Za-z])MY([^A-Za-z]|$)|(^|[^A-Za-z])MYS([^A-Za-z]|$)|Malaysia|Kuala[ -]?Lumpur|Johor[ -]?Bahru|Cyberjaya)",
+            regex: "(?i)(马来西亚|馬來西亞|吉隆坡|🇲🇾|(^|[^A-Za-z0-9])MYS([^A-Za-z]|$)|Malaysia|Kuala[ -]?Lumpur|Johor[ -]?Bahru|Cyberjaya)",
+            codeRegex: "(^|[^A-Za-z0-9])MY([^A-Za-z]|$)",
             icon: flagIcon("my")
         },
         {
             name: "NL",
-            regex: "(?i)(荷兰|荷蘭|阿姆斯特丹|🇳🇱|(^|[^A-Za-z])NL([^A-Za-z]|$)|(^|[^A-Za-z])NLD([^A-Za-z]|$)|Netherlands|Amsterdam|Rotterdam)",
+            regex: "(?i)(荷兰|荷蘭|阿姆斯特丹|鹿特丹|🇳🇱|(^|[^A-Za-z0-9])(NL|NLD)([^A-Za-z]|$)|Netherlands|Amsterdam|Rotterdam)",
             icon: flagIcon("nl")
         },
         {
             name: "PH",
-            regex: "(?i)(菲律宾|菲律賓|马尼拉|馬尼拉|宿务|宿霧|🇵🇭|(^|[^A-Za-z])PH([^A-Za-z]|$)|(^|[^A-Za-z])PHL([^A-Za-z]|$)|Philippines|Manila|Cebu)",
+            regex: "(?i)(菲律宾|菲律賓|马尼拉|馬尼拉|宿务|宿霧|🇵🇭|(^|[^A-Za-z0-9])PHL?([^A-Za-z]|$)|Philippines|Manila|Cebu)",
             icon: flagIcon("ph")
         },
         {
             name: "SG",
-            regex: "(?i)(新加坡|狮城|獅城|🇸🇬|(^|[^A-Za-z])SG([^A-Za-z]|$)|(^|[^A-Za-z])SGP([^A-Za-z]|$)|Singapore)",
+            regex: "(?i)(新加坡|狮城|獅城|🇸🇬|(^|[^A-Za-z0-9])SGP?([^A-Za-z]|$)|Singapore)",
             icon: flagIcon("sg")
         },
         {
             name: "TH",
-            regex: "(?i)(泰国|泰國|曼谷|🇹🇭|Thailand|Bangkok|Pattaya|Chiang[ -]?Mai|(^|[^A-Za-z])TH([^A-Za-z]|$)|(^|[^A-Za-z])THA([^A-Za-z]|$))",
+            regex: "(?i)(泰国|泰國|曼谷|清迈|清邁|🇹🇭|Thailand|Bangkok|Pattaya|Chiang[ -]?Mai|(^|[^A-Za-z0-9])THA([^A-Za-z]|$))",
+            codeRegex: "(^|[^A-Za-z0-9])TH([^A-Za-z]|$)",
             icon: flagIcon("th")
         },
         {
             name: "TR",
-            regex: "(?i)(土耳其|伊斯坦布尔|🇹🇷|(^|[^A-Za-z])TR([^A-Za-z]|$)|(^|[^A-Za-z])TUR([^A-Za-z]|$)|Turkey|Türkiye|Istanbul|Ankara)",
+            regex: "(?i)(土耳其|伊斯坦布尔|伊斯坦布爾|安卡拉|🇹🇷|(^|[^A-Za-z0-9])TUR([^A-Za-z]|$)|Turkey|Türkiye|Turkiye|Istanbul|Ankara)",
+            codeRegex: "^(?!.*(?:香港|九龙|九龍|日本|东京|東京|大阪|新加坡|狮城|獅城|台湾|台灣|臺灣|台北|臺北|美国|美國|美西|美东|美東|英国|英國|德国|德國|法国|法國|荷兰|荷蘭|加拿大|澳洲|澳大利亚|澳大利亞|韩国|韓國|越南|泰国|泰國|马来西亚|馬來西亞|菲律宾|菲律賓|印尼|印度|巴西|阿根廷|阿联酋|阿聯酋|迪拜|杜拜|孟加拉|🇭🇰|🇯🇵|🇸🇬|🇹🇼|🇺🇸|🇬🇧|🇩🇪|🇫🇷|🇳🇱|🇨🇦|🇦🇺|🇰🇷|🇻🇳|🇹🇭|🇲🇾|🇵🇭|🇮🇩|🇮🇳|🇧🇷|🇦🇷|🇦🇪|🇧🇩|Hong[ -]?Kong|Singapore|Japan|Tokyo|Taiwan|Taipei|United[ -]?States|Los[ -]?Angeles|San[ -]?Jose|Germany|Frankfurt|United[ -]?Kingdom|London|(^|[^A-Za-z0-9])(?:HK|HKG|JP|JPN|SG|SGP|TW|TWN|US|USA|UK|GB|GBR|DE|DEU|FR|FRA|NL|NLD|CA|CAN|AU|AUS|KR|KOR|VN|VNM|TH|THA|MY|MYS|PH|PHL|ID|IDN|IN|IND|BR|BRA|AR|ARG|AE|UAE|BD|BGD|hk|jp|sg|tw|us|uk|gb|de|fr|nl|ca|au|kr|vn|th|my|ph|id|in|br|ar|ae|bd)([^A-Za-z]|$))).*(^|[^A-Za-z0-9])TR([^A-Za-z]|$)",
             icon: flagIcon("tr")
         },
         {
             name: "TW",
-            regex: "(?i)(台湾|台灣|台北|新北|台中|高雄|🇹🇼|(^|[^A-Za-z])TW([^A-Za-z]|$)|(^|[^A-Za-z])TWN([^A-Za-z]|$)|Taiwan|Taipei|Kaohsiung|Taichung|Hsinchu)",
+            regex: "(?i)(台湾|台灣|臺灣|台北|臺北|新北|台中|臺中|高雄|新竹|🇹🇼|(^|[^A-Za-z0-9])TWN?([^A-Za-z]|$)|Taiwan|Taipei|Kaohsiung|Taichung|Hsinchu)",
             icon: flagIcon("tw")
         },
         {
             name: "US",
-            regex: "(?i)(美国|美國|美西|美东|达拉斯|芝加哥|拉斯维加斯|洛杉矶|洛杉磯|圣何塞|聖何塞|硅谷|矽谷|西雅图|西雅圖|纽约|紐約|🇺🇸|(^|[^A-Za-z])US([^A-Za-z]|$)|(^|[^A-Za-z])USA([^A-Za-z]|$)|United[ -]?States|Los[ -]?Angeles|San[ -]?Jose|Silicon[ -]?Valley|New[ -]?York|Seattle|Dallas|Chicago|Fremont|Phoenix|Denver|Atlanta|Miami)",
+            regex: "(?i)(美国|美國|美西|美东|美東|达拉斯|達拉斯|芝加哥|拉斯维加斯|拉斯維加斯|洛杉矶|洛杉磯|圣何塞|聖何塞|旧金山|舊金山|硅谷|矽谷|西雅图|西雅圖|纽约|紐約|🇺🇸|(^|[^A-Za-z0-9])USA?([^A-Za-z]|$)|United[ -]?States|Los[ -]?Angeles|San[ -]?Jose|San[ -]?Francisco|Silicon[ -]?Valley|New[ -]?York|Seattle|Dallas|Chicago|Fremont|Phoenix|Denver|Atlanta|Miami)",
             icon: flagIcon("us")
         },
         {
             name: "VN",
-            regex: "(?i)(越南|河内|河內|胡志明|🇻🇳|(^|[^A-Za-z])VN([^A-Za-z]|$)|(^|[^A-Za-z])VNM([^A-Za-z]|$)|Viet[ -]?Nam|Hanoi|Ho[ -]?Chi[ -]?Minh)",
+            regex: "(?i)(越南|河内|河內|胡志明|🇻🇳|(^|[^A-Za-z0-9])(VN|VNM)([^A-Za-z]|$)|Viet[ -]?Nam|Hanoi|Ho[ -]?Chi[ -]?Minh)",
             icon: flagIcon("vn")
         }
     ];
@@ -346,12 +346,20 @@ function main(params) {
 
     params.proxies.sort((a, b) => naturalCompare(a.name, b.name));
 
-    // 内核用 Go 正则，JS 侧不支持 (?i) 前缀
-    const toJsRegex = goStyleRegex =>
-        new RegExp(goStyleRegex.replace(/^\(\?i\)/, ""), "i");
+    // 内核用 Go 正则，JS 侧按是否有 (?i) 前缀决定是否开启大小写不敏感
+    const toJsRegex = goStyleRegex => {
+        const ci = goStyleRegex.startsWith("(?i)");
+        return new RegExp(
+            ci ? goStyleRegex.slice(4) : goStyleRegex,
+            ci ? "i" : ""
+        );
+    };
 
     const allProxies = params.proxies.filter(
-        proxy => proxy.type !== "direct" && proxy.type !== "reject"
+        proxy =>
+            proxy.type !== "direct" &&
+            proxy.type !== "reject" &&
+            proxy.type !== "dns"
     );
     const excludeRe = toJsRegex(excludeFilter);
 
@@ -364,8 +372,13 @@ function main(params) {
     const regionNodeNames = new Map();
     const activeRegions = regions.filter(region => {
         const regex = toJsRegex(region.regex);
+        const codeRe = region.codeRegex ? toJsRegex(region.codeRegex) : null;
         const matched = usableProxies
-            .filter(proxy => regex.test(proxy.name))
+            .filter(
+                proxy =>
+                    regex.test(proxy.name) ||
+                    (codeRe && codeRe.test(proxy.name))
+            )
             .map(proxy => proxy.name);
 
         if (matched.length >= minRegionNodes) {
@@ -382,11 +395,23 @@ function main(params) {
     // ── 订阅 DNS 清洗 ──
     // 清洗指向已重建规则集/策略组的引用及 geosite/geoip，避免内核报错或额外下载 geo 文件
 
+    const hasOwn = (object, key) =>
+        Object.prototype.hasOwnProperty.call(object, key);
+
     // 取自实际会建组的 activeRegions，避免引用到节点不足未建组的地区（内核找不到目标组）
     const REGION_NAMES = new Set(activeRegionNames);
 
+    // 包含自定义 type: direct 节点（DNS 可经直连出站指定网卡/参数），排除 reject / dns
     const PROXY_NAMES = new Set(
-        allProxies.map(proxy => proxy && proxy.name).filter(Boolean)
+        params.proxies
+            .filter(
+                proxy =>
+                    proxy &&
+                    proxy.type !== "reject" &&
+                    proxy.type !== "dns" &&
+                    proxy.name
+            )
+            .map(proxy => proxy.name)
     );
 
     // 校验 DNS 条目尾部 "#目标"：合法整条保留，指向已删除对象则剥掉并补 #RULES
@@ -395,6 +420,42 @@ function main(params) {
         OWN_GROUPS.indexOf(ref) !== -1 ||
         REGION_NAMES.has(ref) ||
         PROXY_NAMES.has(ref);
+
+    // Mihomo DNS URL 尾部 # 后支持的无等号布尔参数（保留原样，不按代理目标校验）
+    const DNS_BARE_FLAGS = new Set([
+        "h3",
+        "ecs-override",
+        "skip-cert-verify",
+        "disable-ipv4",
+        "disable-ipv6",
+        "name-cert-verify",
+        "respect-rules"
+    ]);
+    const isDnsBareFlag = part => {
+        const lower = part.toLowerCase();
+        return DNS_BARE_FLAGS.has(lower) || /^disable-qtype-\d+$/.test(lower);
+    };
+
+    const safeDecode = value => {
+        try {
+            return decodeURIComponent(value);
+        } catch {
+            return value;
+        }
+    };
+
+    const subInterfaceName =
+        typeof params["interface-name"] === "string"
+            ? params["interface-name"].trim()
+            : "";
+
+    // 常见网卡名模式（Linux / macOS / BSD / Android / OpenWrt），避免误把网卡绑定当成悬空策略组改写为 #RULES
+    const INTERFACE_NAME_RE =
+        /^(?:eth|en|em|igb|ix|re|vtnet|wlan|wifi|utun|tun|tap|wg|ppp|br|bond|vlan|docker|virbr|veth|rmnet_data|ccmni|pdp_ip|tailscale|lo)\d+(?:\.\d+)?$|^(?:en|wl)[opsx][a-z0-9]+(?:\.\d+)?$|^(?:br|pppoe)-[a-z0-9_-]+$|^zt[a-z0-9]+$|^lo$/i;
+
+    const isInterfaceBinding = ref =>
+        (subInterfaceName !== "" && ref === subInterfaceName) ||
+        INTERFACE_NAME_RE.test(ref);
 
     const asPlainObject = value =>
         isPlainObject(value) ? value : {};
@@ -410,15 +471,165 @@ function main(params) {
             .filter(Boolean);
     };
 
-    // 解析 nameserver-policy / proxy-server-nameserver-policy 的 "rule-set:a,b" 逗号多值键
-    const ruleSetNames = key => {
-        const match = /^rule-set:(.+)$/i.exec(String(key));
-        if (!match) return [];
+    const isCatchAllDomain = pattern =>
+        pattern === "*" ||
+        pattern === "+" ||
+        pattern === "+." ||
+        pattern === ".";
 
-        return match[1]
+    // 拆分逗号分隔的 nameserver-policy / proxy-server-nameserver-policy 键，
+    // 区分 domain、rule-set 与 geo（geosite/geoip），兼容 "rule-set:a,b" / "geosite:cn,private" 续接写法
+    const parsePolicyKey = key => {
+        const parts = String(key)
             .split(",")
-            .map(name => name.trim())
+            .map(part => part.trim())
             .filter(Boolean);
+        const out = [];
+        let activePrefix = null; // "rule-set" | "geo" | null
+
+        for (const part of parts) {
+            const rsMatch = /^rule-set:(.*)$/i.exec(part);
+            if (rsMatch) {
+                activePrefix = "rule-set";
+                const name = rsMatch[1].trim();
+                if (name) out.push({ kind: "rule-set", value: name });
+                continue;
+            }
+
+            if (/^(geosite|geoip):/i.test(part)) {
+                activePrefix = "geo";
+                out.push({ kind: "geo", value: part });
+                continue;
+            }
+
+            if (
+                activePrefix === "rule-set" &&
+                hasOwn(subRuleProviders, part)
+            ) {
+                out.push({ kind: "rule-set", value: part });
+                continue;
+            }
+
+            // 裸标识符紧跟在 rule-set:/geosite:/geoip: 后视为同类续接；
+            // 含域名特征字符（. / * / + / :）时结束续接，按独立域名模式处理（如 "rule-set:a,+.node.com"）
+            if (activePrefix && !/[.*+:]/.test(part)) {
+                out.push({ kind: activePrefix, value: part });
+                continue;
+            }
+
+            activePrefix = null;
+            out.push({ kind: "domain", value: part });
+        }
+
+        return out;
+    };
+
+    // 提取逗号多值键中的全部 rule-set 名称（支持 "rule-set:a,b"、"rule-set:a,+.node.com"、"+.node.com,rule-set:a"）
+    const ruleSetNames = key =>
+        parsePolicyKey(key)
+            .filter(seg => seg.kind === "rule-set")
+            .map(seg => seg.value);
+
+    // 将传统 blacklist 模式的 fake-ip-filter 域名模式转为 rule 模式条目数组；
+    // Mihomo DOMAIN-WILDCARD 仅支持 * / ?（+ 与前导 . 会按字面匹配），须展开为合法通配规则
+    const toRealIpRules = pattern => {
+        const s = String(pattern).trim();
+        if (!s || s.includes(",") || isCatchAllDomain(s)) return [];
+        if (/^(rule-set|geosite|geoip):/i.test(s)) return [];
+
+        if (s.startsWith("+.")) {
+            const rest = s.slice(2);
+            if (
+                !rest ||
+                rest.startsWith(".") ||
+                rest.includes("+") ||
+                isCatchAllDomain(rest)
+            ) {
+                return [];
+            }
+            if (/[*?]/.test(rest)) {
+                return [
+                    "DOMAIN-WILDCARD," + rest + ",real-ip",
+                    "DOMAIN-WILDCARD,*." + rest + ",real-ip"
+                ];
+            }
+            return ["DOMAIN-SUFFIX," + rest + ",real-ip"];
+        }
+
+        if (s.includes("+")) return [];
+
+        if (s.startsWith(".")) {
+            const rest = s.slice(1);
+            if (!rest || rest.startsWith(".") || isCatchAllDomain(rest)) {
+                return [];
+            }
+            return ["DOMAIN-WILDCARD,*." + rest + ",real-ip"];
+        }
+
+        if (/[*?]/.test(s)) {
+            return ["DOMAIN-WILDCARD," + s + ",real-ip"];
+        }
+
+        return ["DOMAIN," + s + ",real-ip"];
+    };
+
+    // 清洗订阅已有的 rule 模式 fake-ip-filter 条目：过滤 MATCH / rule-set / geosite / geoip 与通吃通配
+    const sanitizeFakeIpRule = rule => {
+        const s = String(rule).trim();
+        if (!s) return null;
+
+        const lastComma = s.lastIndexOf(",");
+        if (lastComma === -1) return null;
+
+        const action = s.slice(lastComma + 1).trim().toLowerCase();
+        if (action !== "fake-ip" && action !== "real-ip") return null;
+
+        const head = s.slice(0, lastComma).trim();
+        if (!head || /^MATCH$/i.test(head)) return null;
+
+        const firstComma = head.indexOf(",");
+        if (firstComma === -1) return null;
+
+        const ruleType = head.slice(0, firstComma).trim().toUpperCase();
+        const payload = head.slice(firstComma + 1).trim();
+        if (!payload) return null;
+
+        if (
+            ruleType === "RULE-SET" ||
+            ruleType === "GEOSITE" ||
+            ruleType === "GEOIP" ||
+            /(^|[,(])\s*(rule-set|geosite|geoip)\s*,/i.test(head)
+        ) {
+            return null;
+        }
+
+        if (
+            (ruleType === "DOMAIN" ||
+                ruleType === "DOMAIN-SUFFIX" ||
+                ruleType === "DOMAIN-WILDCARD") &&
+            isCatchAllDomain(payload)
+        ) {
+            return null;
+        }
+
+        if (
+            ruleType === "DOMAIN-WILDCARD" &&
+            (payload.includes("+") || payload.startsWith("."))
+        ) {
+            return null;
+        }
+
+        return head + "," + action;
+    };
+
+    const mergePolicyEntry = (target, key, servers) => {
+        if (!key || servers.length === 0) return;
+
+        if (hasOwn(target, key)) {
+            target[key] = [...new Set([...target[key], ...servers])];
+        } else {
+            target[key] = [...new Set(servers)];
+        }
     };
 
     // 特殊内建 DNS 协议不走代理路由，无需补 #RULES
@@ -426,8 +637,8 @@ function main(params) {
         /^(system|rcode|dhcp):\/\//i.test(s) ||
         s.toLowerCase() === "system";
 
-    // # 后按 "&" 分段：含 "=" 的是参数（h3=/ecs= 等）原样保留，裸段是目标名，需校验；
-    // 目标全部失效，或原订阅 respect-rules 且条目无目标时，补 #RULES 交给路由，避免裸 URL 直连（污染/泄漏）
+    // # 后按 "&" 分段：含 "=" 的参数、合法布尔开关（h3 / disable-ipv6 / respect-rules / disable-qtype-* 等）与网卡绑定原样保留；
+    // 代理/策略组名经百分号解码并结合 proxyRenames 校验，全部失效或原订阅 respect-rules 且无路由目标时补 #RULES
     const stripDanglingRef = (entry, respectRules = false) => {
         const s = String(entry).trim();
         const hash = s.indexOf("#");
@@ -445,39 +656,81 @@ function main(params) {
             .map(part => part.trim())
             .filter(Boolean);
 
-        const paramParts = rawParts.filter(part => part.includes("="));
-        const targetParts = rawParts.filter(part => !part.includes("="));
-        const validTargets = targetParts.filter(refValid);
+        const paramParts = [];
+        const flagParts = [];
+        const targetParts = [];
+        let hasRespectRulesFlag = false;
+
+        for (const part of rawParts) {
+            if (part.includes("=")) {
+                paramParts.push(part);
+            } else if (isDnsBareFlag(part)) {
+                flagParts.push(part);
+                if (part.toLowerCase() === "respect-rules") {
+                    hasRespectRulesFlag = true;
+                }
+            } else {
+                targetParts.push(part);
+            }
+        }
+
+        const validTargets = [];
+
+        for (const part of targetParts) {
+            const decoded = safeDecode(part);
+
+            if (refValid(decoded) || isInterfaceBinding(decoded)) {
+                validTargets.push(part);
+                continue;
+            }
+
+            const renamed = proxyRenames.get(decoded);
+            if (renamed !== undefined && refValid(renamed)) {
+                const encoded =
+                    part !== decoded || /[\s#&%]/.test(renamed)
+                        ? encodeURIComponent(renamed)
+                        : renamed;
+                validTargets.push(encoded);
+            }
+        }
 
         const needRulesFallback =
-            (targetParts.length > 0 && validTargets.length === 0) ||
-            (targetParts.length === 0 &&
-                respectRules &&
-                !isSpecialDnsScheme(base));
+            !isSpecialDnsScheme(base) &&
+            !hasRespectRulesFlag &&
+            ((targetParts.length > 0 && validTargets.length === 0) ||
+                (targetParts.length === 0 && respectRules));
 
         const finalTargets = needRulesFallback ? ["RULES"] : validTargets;
-        const finalParts = [...finalTargets, ...paramParts];
+        const finalParts = [...finalTargets, ...flagParts, ...paramParts];
 
         return finalParts.length > 0
             ? base + "#" + finalParts.join("&")
             : base;
     };
 
-    // 节点解析 DNS 不得经代理/策略组出站，否则形成"需要节点才能解析节点"的循环
+    // 节点解析 DNS 不得经代理/策略组或 respect-rules 出站，否则形成"需要节点才能解析节点"的循环；
+    // 合法传输参数、非路由布尔开关与网卡绑定予以保留
     const stripProxyRefs = entry => {
-        const s = String(entry);
+        const s = String(entry).trim();
         const hash = s.indexOf("#");
 
         if (hash === -1) return s;
 
-        const params = s
+        const kept = s
             .slice(hash + 1)
             .split("&")
             .map(part => part.trim())
-            .filter(part => part !== "" && part.includes("="));
+            .filter(
+                part =>
+                    part !== "" &&
+                    (part.includes("=") ||
+                        (isDnsBareFlag(part) &&
+                            part.toLowerCase() !== "respect-rules") ||
+                        isInterfaceBinding(safeDecode(part)))
+            );
 
-        return params.length > 0
-            ? s.slice(0, hash) + "#" + params.join("&")
+        return kept.length > 0
+            ? s.slice(0, hash) + "#" + kept.join("&")
             : s.slice(0, hash);
     };
 
@@ -485,7 +738,10 @@ function main(params) {
         const out = {};
 
         for (const key of Object.keys(policy)) {
-            out[key] = stringList(policy[key]).map(stripProxyRefs);
+            const servers = stringList(policy[key]).map(stripProxyRefs);
+            if (servers.length > 0) {
+                out[key] = [...new Set(servers)];
+            }
         }
 
         return out;
@@ -511,12 +767,11 @@ function main(params) {
             cleanWithRules
         );
 
-        const subPolicy = Object.assign(
-            {},
-            asPlainObject(subDNS["nameserver-policy"])
-        );
+        const rawPolicy = asPlainObject(subDNS["nameserver-policy"]);
+        const subPolicy = {};
 
-        // fake-ip-filter 仅在缺省/blacklist 时继承；whitelist/rule 语义不同，继承会反转过滤含义，固定输出 blacklist
+        // 统一输出 fake-ip-filter-mode: rule；
+        // 订阅为缺省/blacklist 时逐项转换为 rule 条目，已为 rule 时清洗并保留合法条目，whitelist 语义相反直接跳过
         const modeRaw = subDNS["fake-ip-filter-mode"];
         const mode =
             typeof modeRaw === "string"
@@ -525,32 +780,36 @@ function main(params) {
 
         const subFilter =
             mode === "" || mode === "blacklist"
-                ? stringList(subDNS["fake-ip-filter"]).filter(
-                      item =>
-                          !/^(rule-set|geosite|geoip):/i.test(item)
+                ? stringList(subDNS["fake-ip-filter"]).flatMap(
+                      toRealIpRules
                   )
-                : [];
+                : mode === "rule"
+                  ? stringList(subDNS["fake-ip-filter"])
+                        .map(sanitizeFakeIpRule)
+                        .filter(Boolean)
+                  : [];
 
-        // 逐键清洗：通吃键架空分流、指向重建规则集/内建 geo 的键会硬报错，均丢弃；值同样清洗悬空引用
-        for (const key of Object.keys(subPolicy)) {
-            if (key === "+." || key === "*" || key === "+") {
-                delete subPolicy[key];
-                continue;
-            }
+        // 逐键按逗号分段清洗：丢弃通吃段、rule-set:/geosite:/geoip: 段及空服务器列表；值同步清洗悬空引用
+        for (const key of Object.keys(rawPolicy)) {
+            const servers = stringList(rawPolicy[key]).map(cleanWithRules);
+            if (servers.length === 0) continue;
 
-            if (/^(rule-set|geosite|geoip):/i.test(key)) {
-                delete subPolicy[key];
-                continue;
-            }
+            const safeDomains = parsePolicyKey(key)
+                .filter(
+                    seg =>
+                        seg.kind === "domain" &&
+                        !isCatchAllDomain(seg.value)
+                )
+                .map(seg => seg.value);
 
-            subPolicy[key] = stringList(subPolicy[key]).map(
-                cleanWithRules
-            );
+            if (safeDomains.length === 0) continue;
+
+            mergePolicyEntry(subPolicy, safeDomains.join(","), servers);
         }
 
         // ── 清洗 proxy-server-nameserver-policy ──
-        // 键：geosite:/geoip: 丢弃；rule-set: 仅在订阅原始 rule-providers 有定义时保留并搬运，否则丢弃
-        // 值：stripProxyRefs 清洗；通吃键不删（只作用于节点域名，不会覆盖脚本配置）
+        // 键：按逗号分段解析；geosite:/geoip: 丢弃；rule-set: 仅在订阅原始 rule-providers 有定义时保留并搬运；
+        // 混合键拆分输出（域名段与 rule-set: 段独立），避免内核将逗号后的域名误解析为规则集名；空服务器列表直接丢弃
         const rawPSNPolicy = asPlainObject(
             subDNS["proxy-server-nameserver-policy"]
         );
@@ -559,37 +818,41 @@ function main(params) {
         const carriedRuleProviders = {};
 
         for (const key of Object.keys(rawPSNPolicy)) {
-            if (/^(geosite|geoip):/i.test(key)) continue;
+            const servers = stringList(rawPSNPolicy[key]).map(stripProxyRefs);
+            if (servers.length === 0) continue;
 
-            const names = ruleSetNames(key);
+            const segments = parsePolicyKey(key);
+            const domainSegs = [];
+            const validRSNames = [];
 
-            if (names.length > 0) {
-                const validNames = names.filter(name =>
-                    Object.prototype.hasOwnProperty.call(
-                        subRuleProviders,
-                        name
-                    )
-                );
+            for (const seg of segments) {
+                if (seg.kind === "geo") continue;
 
-                if (validNames.length > 0) {
-                    for (const name of validNames) {
-                        carriedRuleProviders[name] =
-                            subRuleProviders[name];
+                if (seg.kind === "rule-set") {
+                    if (hasOwn(subRuleProviders, seg.value)) {
+                        carriedRuleProviders[seg.value] =
+                            subRuleProviders[seg.value];
+                        if (validRSNames.indexOf(seg.value) === -1) {
+                            validRSNames.push(seg.value);
+                        }
                     }
-
-                    subPSNPolicy[
-                        "rule-set:" + validNames.join(",")
-                    ] = stringList(rawPSNPolicy[key]).map(
-                        stripProxyRefs
-                    );
+                    continue;
                 }
 
-                continue;
+                domainSegs.push(seg.value);
             }
 
-            subPSNPolicy[key] = stringList(rawPSNPolicy[key]).map(
-                stripProxyRefs
-            );
+            if (domainSegs.length > 0) {
+                mergePolicyEntry(subPSNPolicy, domainSegs.join(","), servers);
+            }
+
+            if (validRSNames.length > 0) {
+                mergePolicyEntry(
+                    subPSNPolicy,
+                    "rule-set:" + validRSNames.join(","),
+                    servers
+                );
+            }
         }
 
         let proxyServerNameserver;
@@ -695,12 +958,12 @@ function main(params) {
         "prefer-h3": PREFER_H3,
         "enhanced-mode": "fake-ip",
         "fake-ip-range": "198.18.0.1/16",
-        // IPv6 fake-ip 段（仅 DNS 启用 IPv6 时输出）：用官方文档段，勿用 fc00::/7 等内网段（与真实局域网冲突）
+        // IPv6 fake-ip 段（仅 DNS 启用 IPv6 时输出）：沿用官方文档与多数客户端 TUN 兼容的 ULA 默认段（属 fc00::/7 内固定高熵前缀，避免与常见局域网 ULA 冲突）
         ...(dnsIPv6
             ? { "fake-ip-range6": "fdfe:dcba:9876::/64" }
             : {}),
         "cache-algorithm": "arc",
-        "fake-ip-filter-mode": "blacklist",
+        "fake-ip-filter-mode": "rule",
         "use-hosts":
             typeof subDNS["use-hosts"] === "boolean"
                 ? subDNS["use-hosts"]
@@ -709,41 +972,45 @@ function main(params) {
             typeof subDNS["use-system-hosts"] === "boolean"
                 ? subDNS["use-system-hosts"]
                 : true,
-        // 前段为 real-ip 刚需：局域网、NTP、连通性探测、游戏平台（对时拿假地址会失败，连带影响 TLS 校验）
+        // rule 模式按从上到下顺序决策：
+        // 1) 窄范围 real-ip 刚需（局域网、NCSI、NTP、游戏平台、STUN），置顶避免 time.apple.com / time.windows.com / msftconnecttest.com 等被下方大规则集遮蔽
+        // 2) Apple / Google / Microsoft / AI 强制 fake-ip（早于 cn-domain，避免其 @cn 国内 CDN 域名拿到真实 IP 绕过策略组分流）
+        // 3) 继承并清洗后的订阅条目 + private-domain / cn-domain / fakeip-filter 兜底 real-ip + MATCH,fake-ip
         "fake-ip-filter": [
             ...new Set([
-                "+.lan",
-                "+.local",
-                "+.home.arpa",
-                "localhost.ptlogin2.qq.com",
-                "localhost.sec.qq.com",
-                "localhost.work.weixin.qq.com",
-                "+.msftconnecttest.com",
-                "+.msftncsi.com",
-                "+.ntp.org",
-                "+.xboxlive.com",
-                "+.playstation.net",
-                "+.xbox.com",
-                "xbox.ipv6.microsoft.com",
-                "+.srv.nintendo.net",
-                "time.windows.com",
-                "time.apple.com",
-                "time.asia.apple.com",
-                "time.android.com",
-                "time.nist.gov",
-                "ntp.aliyun.com",
-                "ntp.tencent.com",
-                "ntp.ntsc.ac.cn",
-                // STUN 通配：域名含 stun 段的全部豁免假地址
-                "+.stun.*",
-                "+.stun.*.*",
-                "+.stun.*.*.*",
-                "+.stun.*.*.*.*",
-                // 由脚本自带的规则集兜底，防手维护清单漏项
-                "rule-set:cn-domain",
-                "rule-set:private-domain",
-                "rule-set:fakeip-filter",
-                ...subFilter
+                "DOMAIN-SUFFIX,lan,real-ip",
+                "DOMAIN-SUFFIX,local,real-ip",
+                "DOMAIN-SUFFIX,home.arpa,real-ip",
+                "DOMAIN,localhost.ptlogin2.qq.com,real-ip",
+                "DOMAIN,localhost.sec.qq.com,real-ip",
+                "DOMAIN,localhost.work.weixin.qq.com,real-ip",
+                "DOMAIN-SUFFIX,msftconnecttest.com,real-ip",
+                "DOMAIN-SUFFIX,msftncsi.com,real-ip",
+                "DOMAIN-SUFFIX,ntp.org,real-ip",
+                "DOMAIN-SUFFIX,xboxlive.com,real-ip",
+                "DOMAIN-SUFFIX,playstation.net,real-ip",
+                "DOMAIN-SUFFIX,xbox.com,real-ip",
+                "DOMAIN,xbox.ipv6.microsoft.com,real-ip",
+                "DOMAIN-SUFFIX,srv.nintendo.net,real-ip",
+                "DOMAIN,time.windows.com,real-ip",
+                "DOMAIN,time.apple.com,real-ip",
+                "DOMAIN,time.asia.apple.com,real-ip",
+                "DOMAIN,time.android.com,real-ip",
+                "DOMAIN,time.nist.gov,real-ip",
+                "DOMAIN,ntp.aliyun.com,real-ip",
+                "DOMAIN,ntp.tencent.com,real-ip",
+                "DOMAIN,ntp.ntsc.ac.cn,real-ip",
+                "DOMAIN-WILDCARD,stun.*,real-ip",
+                "DOMAIN-WILDCARD,*.stun.*,real-ip",
+                "RULE-SET,apple-domain,fake-ip",
+                "RULE-SET,google-domain,fake-ip",
+                "RULE-SET,microsoft-domain,fake-ip",
+                "RULE-SET,ai-domain,fake-ip",
+                ...subFilter,
+                "RULE-SET,private-domain,real-ip",
+                "RULE-SET,cn-domain,real-ip",
+                "RULE-SET,fakeip-filter,real-ip",
+                "MATCH,fake-ip"
             ])
         ],
         // 引导 DNS：仅解析其它 DoH 服务器域名；明文 IP 最快且不依赖证书校验（时钟不准时 DoT 证书校验会失败）
@@ -811,7 +1078,6 @@ function main(params) {
     const DOMAIN_SETS = {
         "private-domain": "private",
         "synology-domain": "synology",
-        "ads-domain": "category-ads-all",
         "youtube-domain": "youtube",
         "twitter-domain": "twitter",
         "tiktok-domain": "tiktok",
@@ -850,6 +1116,16 @@ function main(params) {
         params["rule-providers"][key] = ipProvider(IP_SETS[key]);
     });
 
+    // 广告拦截：AWAvenue 秋风广告规则（低误杀、兼顾国内与国际应用广告 SDK）
+    params["rule-providers"]["ads-domain"] = {
+        type: "http",
+        behavior: "domain",
+        format: "mrs",
+        url: "https://cdn.jsdmirror.com/gh/TG-Twilight/AWAvenue-Ads-Rule@main/Filters/AWAvenue-Ads-Rule-Clash.mrs",
+        path: "./ruleset/ads-domain.mrs",
+        interval: RS_INTERVAL
+    };
+
     // 社区维护的 fake-ip 豁免清单（wwqgtxx/clash-rules，官方未收录），供 dns.fake-ip-filter 引用
     params["rule-providers"]["fakeip-filter"] = {
         type: "http",
@@ -859,9 +1135,6 @@ function main(params) {
         path: "./ruleset/fakeip-filter.mrs",
         interval: RS_INTERVAL
     };
-
-    const hasOwn = (object, key) =>
-        Object.prototype.hasOwnProperty.call(object, key);
 
     const renamedRS = {};
 
@@ -929,7 +1202,7 @@ function main(params) {
             const names = ruleSetNames(key);
 
             if (names.length === 0) {
-                newPolicy[key] = oldPolicy[key];
+                mergePolicyEntry(newPolicy, key, oldPolicy[key]);
                 return;
             }
 
@@ -944,21 +1217,28 @@ function main(params) {
                 name => renamedRS[name] || name
             );
 
-            newPolicy[
-                "rule-set:" + rewrittenNames.join(",")
-            ] = oldPolicy[key];
+            mergePolicyEntry(
+                newPolicy,
+                "rule-set:" + rewrittenNames.join(","),
+                oldPolicy[key]
+            );
         });
 
-        params.dns["proxy-server-nameserver-policy"] = newPolicy;
+        if (Object.keys(newPolicy).length > 0) {
+            params.dns["proxy-server-nameserver-policy"] = newPolicy;
+        } else {
+            delete params.dns["proxy-server-nameserver-policy"];
+        }
     }
 
-    // 仅这三类协议有 client-fingerprint 字段；hysteria2 / tuic 内核未提供该字段
-    const FP_OK = ["vless", "vmess", "trojan"];
+    // 仅这四类协议有 client-fingerprint 字段；hysteria2 / tuic 内核未提供该字段
+    const FP_OK = ["vless", "vmess", "trojan", "anytls"];
+    const NO_IP_VERSION_TYPES = new Set(["direct", "reject", "dns"]);
 
     params.proxies.forEach(proxy => {
         // 不覆盖订阅已有的取值
         if (
-            proxy.type !== "direct" &&
+            !NO_IP_VERSION_TYPES.has(proxy.type) &&
             !("ip-version" in proxy)
         ) {
             proxy["ip-version"] = DEFAULT_IP_VERSION;
@@ -968,10 +1248,15 @@ function main(params) {
             FP_OK.indexOf(proxy.type) !== -1 &&
             !proxy["client-fingerprint"]
         ) {
+            const hasReality =
+                isPlainObject(proxy["reality-opts"]) &&
+                typeof proxy["reality-opts"]["public-key"] === "string" &&
+                proxy["reality-opts"]["public-key"] !== "";
             const usesTLS =
                 proxy.type === "trojan" ||
+                proxy.type === "anytls" ||
                 proxy.tls === true ||
-                proxy["reality-opts"];
+                hasReality;
 
             if (usesTLS) {
                 proxy["client-fingerprint"] = "chrome";
