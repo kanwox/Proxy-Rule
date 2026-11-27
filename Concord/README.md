@@ -1,6 +1,6 @@
 # Concord
 
-适用于支持 JavaScript 扩展脚本的 [Concord](https://github.com/chen08209/concord) 内核客户端（如 FlClash），仅支持节点平铺订阅。Concord 是 Rust 实现的独立代理内核，配置采用 Clash 格式；本脚本与 Clash / Mihomo 版保持统一的分流策略，并针对 Concord 的字段支持范围做了净化适配。
+适用于支持 JavaScript 扩展脚本的 [Concord](https://github.com/Vialibrex/concord) 内核客户端（如 FlClash），仅支持节点平铺订阅。Concord 是 Rust 实现的独立代理内核，配置采用 Clash 格式；本脚本与 Clash / Mihomo 版保持统一的分流策略，并针对 Concord 的字段支持范围做了净化适配。
 
 ---
 
@@ -34,7 +34,7 @@
 - **节点净化**：自动过滤流量/到期等提示节点，重名自动编号并同步重写 `dialer-proxy` 引用，为 TLS 节点（`vless`/`vmess`/`trojan`/`anytls`）补全 Chrome uTLS 指纹（保留 `chrome120`）。
 - **字段净化**：静默剔除 Concord 不支持的顶层/分段死键与节点类型/传输/加密/DNS 协议，规范化大小写与下划线键名，过滤非法 `DomainTrie` 域名模式，清理非法 hosts 与悬空/成环引用，避免不兼容告警与整份拒载。
 - **继承与覆写边界清晰**：
-  - **原样继承**：客户端/订阅自管设置如 `dns.listen`（未设置时默认 `127.0.0.1:1053`）、`tun`（仅剔除内核不应用的死键）、`mixed-port`、`allow-lan`、`lan-allowed-ips`、`lan-disallowed-ips`、`mode`、`log-level`、`external-controller`、`ntp`、`mitm` 等原样透传；`ipv6` 默认开启，若订阅显式设为 `false` 则尊重。
+  - **原样继承**：客户端/订阅自管设置如 `dns.listen`（未设置时默认 `127.0.0.1:1053`）、`tun`（仅剔除内核不应用的死键）、`mixed-port`、`allow-lan`、`lan-allowed-ips`、`lan-disallowed-ips`、`listeners` / `tunnels` / `ss-config` / `vmess-config`（并自动清洗悬空的 `rule` 与 `proxy` 引用）、`mode`、`log-level`、`external-controller`、`ntp`、`mitm` 等原样透传；`ipv6` 默认开启，若订阅显式设为 `false` 则尊重。
   - **脚本覆写**：统一设置 `basicOptions`（`unified-delay`、`tcp-concurrent`、`find-process-mode: off`、TCP 保活）、`sniffer`、DNS 分流与 `fake-ip-filter-mode: rule`、`rule-providers`、`proxy-groups` 与 `rules`。
 
 ---

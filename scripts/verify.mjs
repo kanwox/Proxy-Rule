@@ -705,7 +705,7 @@ check("readmes: 根目录与各端 README 版本及特性描述准确", () => {
     assert.ok(clashReadme.includes("AWAvenue-Ads-Rule"));
 
     const concordReadme = readUtf8("Concord/README.md");
-    assert.ok(concordReadme.includes("chen08209/concord"));
+    assert.ok(concordReadme.includes("Vialibrex/concord"));
     assert.ok(concordReadme.includes("Concord_rule.js"));
     assert.ok(concordReadme.includes("AWAvenue-Ads-Rule") && concordReadme.includes("smart"));
 
@@ -1372,25 +1372,31 @@ check("concord-contract: 不兼容告警源被静默清除（含 B5 保留 ECH�
             { name: "SNU", type: "snell", server: "x", port: 1, psk: "p", version: 1, udp: true },
             { name: "SNC", type: "ss", server: "x", port: 1, cipher: "made-up-cipher", password: "p" },
             { name: "SNE", type: "ss", server: "x", port: 1, cipher: "aes-128-gcm", password: "p", plugin: "v2ray-plugin", "plugin-opts": { mode: "websocket", tls: true, "ech-opts": { enable: true } } },
-            { name: "SNEOFF", type: "ss", server: "x", port: 1, cipher: "aes-128-gcm", password: "p", plugin: "v2ray-plugin", "plugin-opts": { mode: "websocket", tls: true, "ech-opts": { enable: false } } }
+            { name: "SNEOFF", type: "ss", server: "x", port: 1, cipher: "aes-128-gcm", password: "p", plugin: "v2ray-plugin", "plugin-opts": { mode: "websocket", tls: true, "ech-opts": { enable: false } } },
+            { name: "OVPN", type: "openvpn", server: "x", port: 1194, ca: "c", username: "u", password: "p" }
         ],
         "geodata-mode": true,
+        "tuic-server": { enable: true },
         "global-client-fingerprint": "chrome",
         "lgbm-auto-update": true,
         "lgbm-update-interval": 72,
-        "lgbm-url": "https://example.com/lgbm.bin",
+        "lgbm-url": "lgbm.bin",
         profile: { "store-selected": true, "smart-collector-size": 100 },
-        listeners: [{ name: "l", type: "mixed", port: 1 }],
+        listeners: [{ name: "l", type: "mixed", port: 7894 }],
+        tunnels: ["tcp,127.0.0.1:7895,1.1.1.1:53"],
+        "ss-config": "ss://aes-128-gcm:pass@127.0.0.1:7896",
+        "vmess-config": "vmess://1:9d0cb9d0-964f-4ef6-897d-6c6b3ccf9e68@127.0.0.1:7897",
         "external-ui": "ui",
         "external-controller": "127.0.0.1:9090",
         "bind-address": "192.168.1.2",
         secret: "x",
         "unknown-key": 1,
-        tun: { enable: true, stack: "mixed", gso: true, "dns-mode": "hijack", mtu: 9000 },
+        tun: { enable: true, stack: "mixed", gso: true, "gso-max-size": 65536, "dns-mode": "hijack", mtu: 9000 },
         experimental: { "quic-go-disable-ecn": false },
         tls: { certificate: "a" },
+        "geox-url": { geoip: "geoip.dat", mmdb: "geo.mmdb" },
         dns: {
-            nameserver: ["dhcp://en0", "ts://bad", "https://223.5.5.5/dns-query"]
+            nameserver: ["dhcp://en0", "ts://bad", "223.5.5.5"]
         }
     });
     const names = out.proxies.map(p => p.name);
@@ -1399,8 +1405,8 @@ check("concord-contract: 不兼容告警源被静默清除（含 B5 保留 ECH�
         [],
         "不支持节点应剔除"
     );
-    // B5: v2ray-plugin + TLS + ECH (SNE) 内核已支持，应保留
-    for (const kept of ["MU", "RE", "H2OFF", "SNE", "SNEOFF", "FP120", "XF120"]) {
+    // B5: v2ray-plugin + TLS + ECH (SNE) 与 OpenVPN (OVPN) 内核均已支持，应保留
+    for (const kept of ["MU", "RE", "H2OFF", "SNE", "SNEOFF", "FP120", "XF120", "OVPN"]) {
         assert.ok(names.includes(kept), kept + " 内核可构建，不应误删");
     }
     // B6: 废弃指纹被改写，chrome120 保留不动
@@ -1415,25 +1421,33 @@ check("concord-contract: 不兼容告警源被静默清除（含 B5 保留 ECH�
         "chrome120",
         "xhttp download-settings 内 chrome120 应原样保留"
     );
-    // B9: 顶层 T2 死键（含 lgbm-*）与 profile.smart-collector-size 消失
-    for (const key of ["geodata-mode", "global-client-fingerprint", "listeners", "external-ui", "lgbm-auto-update", "lgbm-update-interval", "lgbm-url"]) {
+    // B9: 顶层 T2 死键（含 tuic-server/lgbm-*）与 profile.smart-collector-size 消失
+    for (const key of ["tuic-server", "global-client-fingerprint", "external-ui", "lgbm-auto-update", "lgbm-update-interval", "lgbm-url"]) {
         assert.equal(out[key], undefined, key + " 应被剔除");
     }
     assert.equal(out.profile["smart-collector-size"], undefined, "profile.smart-collector-size 应被剔除");
+    // 2026-11-26/27: INERT 键与内建入站配置应原样透传
+    assert.equal(out["geodata-mode"], true, "INERT 键 geodata-mode 应原样透传");
+    assert.equal(out.listeners.length, 1, "listeners 应保留");
+    assert.equal(out.tunnels.length, 1, "tunnels 应保留");
+    assert.equal(out["ss-config"], "ss://aes-128-gcm:pass@127.0.0.1:7896", "ss-config 应保留");
+    assert.equal(out["vmess-config"], "vmess://1:9d0cb9d0-964f-4ef6-897d-6c6b3ccf9e68@127.0.0.1:7897", "vmess-config 应保留");
     assert.equal(out["external-controller"], "127.0.0.1:9090", "客户端自管设置应透传");
     assert.equal(out.secret, "x", "客户端自管设置应透传");
     assert.equal(out["bind-address"], "192.168.1.2", "客户端自管设置应透传");
     assert.equal(out["unknown-key"], 1, "黑名单外的未知键应保留");
     assert.equal(out.tun.gso, true, "受支持的 tun.gso 应透传");
+    assert.equal(out.tun["gso-max-size"], 65536, "INERT 键 tun.gso-max-size 应透传");
     assert.equal(out.tun["dns-mode"], undefined);
-    assert.equal(out.tun.stack, "mixed", "生效的 tun.stack 应透传");
+    assert.equal(out.tun.stack, "mixed", "INERT 键 tun.stack 应透传");
     assert.equal(out.tun.mtu, 9000, "合法 tun 设置应继承");
     assert.equal(out.tun.enable, true);
-    assert.equal(out.experimental["quic-go-disable-ecn"], undefined);
+    assert.equal(out.experimental["quic-go-disable-ecn"], false, "INERT 键 experimental.quic-go-disable-ecn 应透传");
+    assert.equal(out["geox-url"].geoip, "geoip.dat", "INERT 键 geox-url.geoip 应透传");
     assert.equal(out.tls.certificate, undefined);
     assert.ok(out.dns.nameserver.includes("system://"), "dhcp:// 应改写为 system://");
     assert.ok(!out.dns.nameserver.some(s => s.startsWith("ts://")), "ts:// 应丢弃");
-    assert.ok(out.dns.nameserver.includes("https://223.5.5.5/dns-query"), "合法订阅上游应继承");
+    assert.ok(out.dns.nameserver.includes("223.5.5.5"), "合法订阅上游应继承");
     assert.equal(warnings.length, 0, "清洗不应产生日志: " + warnings.join("; "));
 });
 
@@ -1703,6 +1717,39 @@ check("concord-contract: 分流结构与 Clash 版一致（组/规则/地区）"
     assert.ok(!staticGroup.proxies.includes("剩余流量：10GB"), "信息节点不进可选组");
     const hk = concordOut["proxy-groups"].find(g => g.name === "HK");
     assert.deepEqual(hk.proxies, ["HK 01", "HK 02"]);
+});
+
+check("concord-contract: listeners 与 tunnels 引用清洗（改名映射、悬空 proxy 与已删 sub-rules）", () => {
+    const { main } = loadConcord();
+    const out = main({
+        proxies: [
+            C_OK,
+            { ...C_OK, name: "HK", server: "1.1.1.2" }
+        ],
+        "sub-rules": {
+            inner: ["MATCH,DIRECT"]
+        },
+        listeners: [
+            { name: "l1", type: "mixed", port: 7891, rule: "inner", proxy: "HK" },
+            { name: "l2", type: "socks", port: 7892, proxy: "GoneGroup" },
+            { name: "l3", type: "http", port: 7893, proxy: "主代理" }
+        ],
+        tunnels: [
+            "tcp,127.0.0.1:6553,1.1.1.1:53,HK",
+            "udp,127.0.0.1:6554,1.1.1.1:53,GoneGroup",
+            { network: ["tcp"], address: "127.0.0.1:6555", target: "1.1.1.1:53", proxy: "HK" },
+            { network: ["udp"], address: "127.0.0.1:6556", target: "1.1.1.1:53", proxy: "GoneGroup" }
+        ]
+    });
+    assert.equal(out["sub-rules"], undefined, "sub-rules 应被删除");
+    assert.equal(out.listeners[0].rule, undefined, "悬空 listener.rule 应被删除");
+    assert.equal(out.listeners[0].proxy, "节点·HK", "listener.proxy 应同步改名映射");
+    assert.equal(out.listeners[1].proxy, undefined, "悬空 listener.proxy 应被删除");
+    assert.equal(out.listeners[2].proxy, "主代理", "合法策略组引用应保留");
+    assert.equal(out.tunnels[0], "tcp,127.0.0.1:6553,1.1.1.1:53,节点·HK", "字符串形式 tunnel 改名引用应同步");
+    assert.equal(out.tunnels[1], "udp,127.0.0.1:6554,1.1.1.1:53", "字符串形式 tunnel 悬空 proxy 应剥离");
+    assert.equal(out.tunnels[2].proxy, "节点·HK", "对象形式 tunnel 改名引用应同步");
+    assert.equal(out.tunnels[3].proxy, undefined, "对象形式 tunnel 悬空 proxy 应删除");
 });
 
 check("concord-contract: 无可用节点时提示一次", () => {

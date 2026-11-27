@@ -1,11 +1,11 @@
-// Concord_rule.js V1.4
-// Concord 内核（https://github.com/chen08209/concord）的订阅覆写脚本。
+// Concord_rule.js V1.5
+// Concord 内核（https://github.com/Vialibrex/concord）的订阅覆写脚本。
 // Concord 是独立的代理内核，配置采用 Clash 格式；本脚本从节点平铺的订阅
 // 生成地区组、应用分流与 fake-ip DNS。
 // 订阅中内核不支持的字段按黑名单静默丢弃，未知键保留；
 // 客户端自管设置原样透传，仅删除内核不应用的死键（不改变任何生效设置）。
-// 净化依据：concord crates/config/src/keys.rs、proxy/parse.rs、dns.rs 与 crates/proxy 节点构建行为
-// （2026-11-24 按内核源码复核；docs/compatibility.md 滞后于代码时以代码为准）。
+// 净化依据：concord crates/config/src/keys.rs、proxy/parse.rs、listener/、dns.rs 与 crates/proxy 节点构建行为
+// （2026-11-27 按内核源码复核；docs/compatibility.md 滞后于代码时以代码为准）。
 // 首次启动联网下载规则集，在日志确认全部下载成功。
 
 // ── 可调参数（集中维护） ──
@@ -53,15 +53,15 @@ const utf8Bytes = str => {
 // 只处理订阅透传内容；黑名单外的未知键保留
 
 // Concord 未实现的 mihomo 扩展功能键（keys.rs TOP_T2），静默丢弃。
-// allow-lan、lan-allowed-ips 与 lan-disallowed-ips 等客户端设置均被 Concord 完整支持，原样透传
+// allow-lan、lan-allowed-ips、lan-disallowed-ips、listeners、tunnels、ss-config、vmess-config 等均被 Concord 支持，
+// geodata-mode、geosite-matcher、etag-support 已归入 TOP_INERT 静默忽略，均原样透传
 const CONCORD_TOP_DROP = [
-    "geodata-mode", "listeners", "tunnels", "ss-config", "vmess-config",
     "tuic-server", "iptables", "clash-for-android", "inbound-tfo",
     "inbound-mptcp",
     "external-controller-pipe", "external-controller-unix",
     "external-controller-tls", "external-controller-routing-mark",
     "external-ui", "external-ui-url", "external-ui-name",
-    "external-doh-server", "geosite-matcher", "etag-support",
+    "external-doh-server",
     "global-client-fingerprint",
     "lgbm-auto-update", "lgbm-update-interval", "lgbm-url"
 ];
@@ -87,11 +87,11 @@ const BUILTIN_POLICIES = new Set([
 ]);
 
 // 客户端设置段落中 Concord 不应用的死键：删除不改变任何生效设置，仅消除忽略告警。
-// 内核读取并生效的设置（allow-lan、LAN 名单、tun.stack、端口等）不在此列
+// 内核读取并生效的设置（allow-lan、LAN 名单、端口等）及 INERT 静默键（tun.stack、gso-max-size 等）不在此列
 
 // tun（keys.rs TUN_T2）
 const CONCORD_TUN_DROP = [
-    "dns-mode", "gso-max-size", "inet6-address",
+    "dns-mode", "inet6-address",
     "iproute2-table-index", "iproute2-rule-index", "auto-redirect",
     "auto-redirect-input-mark", "auto-redirect-output-mark",
     "auto-redirect-iproute2-fallback-rule-index", "loopback-address",
@@ -100,13 +100,7 @@ const CONCORD_TUN_DROP = [
     "exclude-src-port-range", "exclude-dst-port-range",
     "include-android-user", "include-package", "exclude-package",
     "include-mac-address", "exclude-mac-address",
-    "endpoint-independent-nat", "icmp-timeout", "file-descriptor",
-    "recvmsgx", "sendmsgx", "processors-per-channel"
-];
-
-// experimental：quic-go 开关不被应用
-const CONCORD_EXPERIMENTAL_DROP = [
-    "quic-go-disable-gso", "quic-go-disable-ecn"
+    "endpoint-independent-nat", "icmp-timeout", "file-descriptor"
 ];
 
 // tls 入站设置不被使用（custom-certifactes 生效，不删）
@@ -125,8 +119,9 @@ const CONCORD_AMNEZIA_DROP = [
 ];
 
 // 不支持的节点类型（parse.rs T2_PROXY_TYPES）：保留会被 Concord 隔离，引用组拒绝连接
+// openvpn 自 2026-11-26 起已原生支持，不再丢弃
 const CONCORD_NODE_TYPE_DROP = new Set([
-    "tailscale", "easytier", "zerotier", "openvpn", "sudoku", "trusttunnel"
+    "tailscale", "easytier", "zerotier", "sudoku", "trusttunnel"
 ]);
 
 // 不支持的传输网络（parse.rs T2_NETWORKS）
@@ -416,6 +411,72 @@ const concordFixDialers = (proxies, groups, proxyRenames = new Map()) => {
         }
         path.forEach(name => done.add(name));
     });
+};
+
+// listeners / tunnels 引用校验（listener/mod.rs check_refs）：
+// 指向不存在节点/组或已被删除的 sub-rules 会导致整份配置拒载；
+// 同步改名映射，清除悬空 proxy 与 rule 引用，让连接回退到主规则集
+const concordFixInbounds = (params, proxyRenames = new Map()) => {
+    const known = new Set([
+        ...params.proxies.map(proxy => proxy.name),
+        ...params["proxy-groups"].map(group => group.name),
+        ...[...BUILTIN_POLICIES].filter(name => name !== "RULES")
+    ]);
+
+    const resolveProxy = name => {
+        if (typeof name !== "string") return null;
+        const trimmed = name.trim();
+        if (trimmed === "") return null;
+        const resolved = proxyRenames.get(trimmed) || trimmed;
+        return known.has(resolved) ? resolved : null;
+    };
+
+    if (Array.isArray(params.listeners)) {
+        params.listeners.forEach(listener => {
+            if (!isPlainObject(listener)) return;
+            Object.keys(listener).forEach(key => {
+                const lower = key.toLowerCase();
+                if (lower === "rule") {
+                    // 脚本不生成且已删除 sub-rules，任何非空 rule 都会触发拒载
+                    delete listener[key];
+                } else if (lower === "proxy") {
+                    const resolved = resolveProxy(listener[key]);
+                    if (resolved) listener[key] = resolved;
+                    else delete listener[key];
+                }
+            });
+        });
+    }
+
+    if (Array.isArray(params.tunnels)) {
+        params.tunnels = params.tunnels.map(item => {
+            if (typeof item === "string") {
+                const parts = item.split(",");
+                if (parts.length === 4) {
+                    const rawProxy = parts[3].trim();
+                    if (rawProxy !== "") {
+                        const resolved = resolveProxy(rawProxy);
+                        if (resolved) {
+                            parts[3] = resolved;
+                            return parts.join(",");
+                        }
+                        return parts.slice(0, 3).join(",");
+                    }
+                }
+                return item;
+            }
+            if (isPlainObject(item)) {
+                Object.keys(item).forEach(key => {
+                    if (key.toLowerCase() === "proxy") {
+                        const resolved = resolveProxy(item[key]);
+                        if (resolved) item[key] = resolved;
+                        else delete item[key];
+                    }
+                });
+            }
+            return item;
+        });
+    }
 };
 
 // hosts 清洗：非法键/值、多值非全 IP、自映射、别名环会被 Concord 拒载或跳过。
@@ -1893,24 +1954,16 @@ function main(params, profileName) {
     // 订阅 sub-rules 引用原组/规则集，重建后必然悬空；脚本不生成 SUB-RULE 规则，整段丢弃
     delete params["sub-rules"];
 
-    // 2) 客户端设置段落中的死键：只删 Concord 不应用的键，生效设置不动
+    // 2) 客户端设置段落中的死键：只删 Concord 不应用的键，生效设置与 INERT 静默键不动
     if (isPlainObject(params.tun)) {
         CONCORD_TUN_DROP.forEach(key => {
             delete params.tun[key];
-        });
-    }
-    if (isPlainObject(params.experimental)) {
-        CONCORD_EXPERIMENTAL_DROP.forEach(key => {
-            delete params.experimental[key];
         });
     }
     if (isPlainObject(params.tls)) {
         CONCORD_TLS_DROP.forEach(key => {
             delete params.tls[key];
         });
-    }
-    if (isPlainObject(params["geox-url"])) {
-        delete params["geox-url"].geoip;
     }
 
     // 3) rule-providers：删无效非对象条目与 path-in-bundle（override-expr 仅属 proxy-providers）
@@ -2036,6 +2089,9 @@ function main(params, profileName) {
 
     // 7) dialer-proxy 引用校验：同步改名映射，再清除悬空引用与环（避免整份拒载）
     concordFixDialers(params.proxies, params["proxy-groups"], proxyRenames);
+
+    // 8) listeners / tunnels 引用校验：同步改名映射，清除悬空 proxy 与已删 sub-rules 的 rule 引用（避免整份拒载）
+    concordFixInbounds(params, proxyRenames);
 
     return params;
 }
