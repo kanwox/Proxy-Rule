@@ -3,6 +3,8 @@ ipv6: true
 close_connections_on_policy_change: true
 proxy_latency_test_url: https://www.gstatic.com/generate_204
 direct_latency_test_url: http://wifi.vivo.com.cn/generate_204
+hijack_dns:
+  - "*"
 bypass_tunnel_proxy:
   - "localhost"
   - "127.0.0.0/8"
@@ -75,6 +77,9 @@ dns:
         value: system
     - domain_suffix:
         match: home.arpa
+        value: system
+    - domain_suffix:
+        match: home
         value: system
     # 国内域名走国内 DoH
     - proxy_rule_set:
@@ -475,9 +480,9 @@ rules:
       match: "https://cdn.jsdmirror.com/gh/Repcz/Tool@X/Egern/Rules/ChinaDomain.yaml"
       policy: DIRECT
       update_interval: 604800
+  # 非国内域名默认经代理走海外 DoH（不会向国内 DNS 泄露）；移除 no_resolve 让未收录的国内域名也能按 CN IP 直连
   - geoip:
       match: CN
       policy: DIRECT
-      no_resolve: true
   - default:
       policy: 兜底

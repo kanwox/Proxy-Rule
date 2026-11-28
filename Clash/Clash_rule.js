@@ -63,6 +63,8 @@ function main(params, profileName) {
         "tcp-concurrent": true,
         // 不匹配进程名：省掉每条连接的进程查找
         "find-process-mode": "off",
+        // 全量规则均使用 .mrs rule-providers，关闭订阅可能残留的 Geo 数据库后台自动更新
+        "geo-auto-update": false,
         // TCP 保活（秒）：平衡移动端电量与 NAT 会话活性，避免被中间网关静默重置
         "keep-alive-idle": 300,
         "keep-alive-interval": 30
@@ -73,6 +75,8 @@ function main(params, profileName) {
     Object.assign(params, basicOptions);
     // 内核已移除该字段并会在启动时报错
     delete params["global-client-fingerprint"];
+    // 订阅 sub-rules 引用原组/规则集，重建后必然悬空并导致内核拒载；脚本不生成 SUB-RULE，整段丢弃
+    delete params["sub-rules"];
 
     params.sniffer = {
         enable: true,
@@ -1231,9 +1235,26 @@ function main(params, profileName) {
         }
     }
 
-    // 仅这四类协议有 client-fingerprint 字段；hysteria2 / tuic 内核未提供该字段
+    // 仅这四类协议顶层按 TLS 补全默认指纹，hysteria2 / tuic 内核未提供该字段；
+    // snell（shadow-tls/restls/jls）与 xhttp download-settings 同步规范化废弃指纹并按需补全
     const FP_OK = ["vless", "vmess", "trojan", "anytls"];
     const NO_IP_VERSION_TYPES = new Set(["direct", "reject", "dns"]);
+    const SNELL_TLS_OBFS = new Set(["shadow-tls", "restls", "jls"]);
+
+    const hasRealityKey = opts =>
+        isPlainObject(opts) &&
+        typeof opts["public-key"] === "string" &&
+        opts["public-key"].trim() !== "";
+
+    const normalizeFingerprint = target => {
+        if (!isPlainObject(target)) return;
+        const fp = target["client-fingerprint"];
+        if (typeof fp !== "string") return;
+        if (/^chrome_/i.test(fp)) target["client-fingerprint"] = "chrome";
+        else if (fp.toLowerCase() === "randomized") {
+            target["client-fingerprint"] = "random";
+        }
+    };
 
     params.proxies.forEach(proxy => {
         // 不覆盖订阅已有的取值
@@ -1244,22 +1265,47 @@ function main(params, profileName) {
             proxy["ip-version"] = DEFAULT_IP_VERSION;
         }
 
+        normalizeFingerprint(proxy);
+
         if (
             FP_OK.indexOf(proxy.type) !== -1 &&
             !proxy["client-fingerprint"]
         ) {
-            const hasReality =
-                isPlainObject(proxy["reality-opts"]) &&
-                typeof proxy["reality-opts"]["public-key"] === "string" &&
-                proxy["reality-opts"]["public-key"] !== "";
             const usesTLS =
                 proxy.type === "trojan" ||
                 proxy.type === "anytls" ||
                 proxy.tls === true ||
-                hasReality;
+                hasRealityKey(proxy["reality-opts"]);
 
             if (usesTLS) {
                 proxy["client-fingerprint"] = "chrome";
+            }
+        }
+
+        if (proxy.type === "snell" && !proxy["client-fingerprint"]) {
+            const obfsMode = isPlainObject(proxy["obfs-opts"])
+                ? String(proxy["obfs-opts"].mode || "").toLowerCase()
+                : "";
+            if (SNELL_TLS_OBFS.has(obfsMode)) {
+                proxy["client-fingerprint"] = "chrome";
+            }
+        }
+
+        if (
+            (proxy.type === "vless" ||
+                proxy.type === "vmess" ||
+                proxy.type === "trojan") &&
+            isPlainObject(proxy["xhttp-opts"]) &&
+            isPlainObject(proxy["xhttp-opts"]["download-settings"])
+        ) {
+            const ds = proxy["xhttp-opts"]["download-settings"];
+            normalizeFingerprint(ds);
+            if (!ds["client-fingerprint"] && !proxy["client-fingerprint"]) {
+                const dsUsesTLS =
+                    ds.tls === true || hasRealityKey(ds["reality-opts"]);
+                if (dsUsesTLS) {
+                    ds["client-fingerprint"] = "chrome";
+                }
             }
         }
     });
@@ -1402,9 +1448,75 @@ function main(params, profileName) {
         });
     };
 
+    // listeners / tunnels 引用校验：指向不存在节点/组或已删除 sub-rules 会导致内核拒载；
+    // 同步改名映射，清除悬空 proxy 与 rule 引用，让连接回退到主规则集
+    const fixInbounds = () => {
+        const known = new Set([
+            ...params.proxies.map(proxy => proxy.name),
+            ...groups.map(group => group.name),
+            ...[...BUILTIN_POLICIES].filter(name => name !== "RULES")
+        ]);
+
+        const resolveProxy = name => {
+            if (typeof name !== "string") return null;
+            const trimmed = name.trim();
+            if (trimmed === "") return null;
+            const resolved = proxyRenames.get(trimmed) || trimmed;
+            return known.has(resolved) ? resolved : null;
+        };
+
+        if (Array.isArray(params.listeners)) {
+            params.listeners.forEach(listener => {
+                if (!isPlainObject(listener)) return;
+                Object.keys(listener).forEach(key => {
+                    const lower = key.toLowerCase();
+                    if (lower === "rule") {
+                        delete listener[key];
+                    } else if (lower === "proxy") {
+                        const resolved = resolveProxy(listener[key]);
+                        if (resolved) listener[key] = resolved;
+                        else delete listener[key];
+                    }
+                });
+            });
+        }
+
+        if (Array.isArray(params.tunnels)) {
+            params.tunnels = params.tunnels.map(item => {
+                if (typeof item === "string") {
+                    const parts = item.split(",");
+                    if (parts.length === 4) {
+                        const rawProxy = parts[3].trim();
+                        if (rawProxy !== "") {
+                            const resolved = resolveProxy(rawProxy);
+                            if (resolved) {
+                                parts[3] = resolved;
+                                return parts.join(",");
+                            }
+                            return parts.slice(0, 3).join(",");
+                        }
+                    }
+                    return item;
+                }
+                if (isPlainObject(item)) {
+                    Object.keys(item).forEach(key => {
+                        if (key.toLowerCase() === "proxy") {
+                            const resolved = resolveProxy(item[key]);
+                            if (resolved) item[key] = resolved;
+                            else delete item[key];
+                        }
+                    });
+                }
+                return item;
+            });
+        }
+    };
+
     fixDialerProxies(params.proxies, groups);
 
     params["proxy-groups"] = groups;
+
+    fixInbounds();
 
     // 规则先命中先决定，顺序：私网/广告 → NAS 厂商服务 → 传输层兜底（NTP、QUIC，须先于应用分流）→ 应用分流 → 国内直连 → MATCH
     // cn-domain 排在 Google / Apple / Microsoft 之后，避免其国内 CDN 域名被直连截胡

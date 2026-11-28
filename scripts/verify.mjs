@@ -223,6 +223,8 @@ check("surge: 无引号 policy-regex-filter、HTTP 测速、[Host]、内置 LAN/
     assert.match(surge, /^FINAL,兜底,dns-failed$/m);
     assert.match(surge, /^proxy-test-url = http:\/\/www\.gstatic\.com\/generate_204$/m);
     assert.match(surge, /^encrypted-dns-server = https:\/\/223\.5\.5\.5\/dns-query, https:\/\/1\.12\.12\.12\/dns-query$/m);
+    assert.match(surge, /^hijack-dns = \*:53$/m);
+    assert.match(surge, /^exclude-simple-hostnames = true$/m);
     assert.match(surge, /^skip-proxy = .*127\.0\.0\.1, ::1/m);
 
     const hostSection = sliceSection(surge, "\n[Host]\n", "\n[Proxy Group]\n", "Surge [Host]");
@@ -238,7 +240,7 @@ check("surge: 无引号 policy-regex-filter、HTTP 测速、[Host]、内置 LAN/
     assert.match(ruleSection, /^RULE-SET,SYSTEM,DIRECT$/m);
     assert.match(ruleSection, /^RULE-SET,LAN,DIRECT,no-resolve$/m);
     assert.ok(!ruleSection.includes("Lan.list"), "Surge 不应再引用远程 Lan.list");
-    assert.match(ruleSection, /Reject\.list,REJECT,pre-matching,extended-matching,update-interval=604800$/m);
+    assert.match(ruleSection, /Reject\.list,REJECT-DROP,pre-matching,extended-matching,update-interval=604800$/m);
     assert.match(ruleSection, /ChinaIP\.list,DIRECT,update-interval=604800$/m);
     assert.ok(!/ChinaIP\.list,.*extended-matching/m.test(ruleSection), "Surge ChinaIP.list 不应添加 extended-matching");
     const extMatches = ruleSection.match(/,extended-matching,/g) || [];
@@ -415,6 +417,7 @@ check("stash: HTTP benchmark-url、移除 sniffer、AWAvenue .mrs、REJECT-DROP,
 
 check("egern: YAML 1.2 锚点直选节点、内联 LAN/Synology/Apple TV+、geoip: CN、海外 DoH 规则与图标", () => {
     assert.match(egern, /^close_connections_on_policy_change:\s*true$/m);
+    assert.match(egern, /^hijack_dns:\n\s+-\s+"?\*"?$/m, "Egern 应配置 hijack_dns");
     const groupsBlock = sliceSection(egern, "\npolicy_groups:\n", "\nrules:\n", "Egern policy_groups:");
     const businessGroups = groupsBlock.match(
         /policies:\s*\[主代理, DIRECT, HK, JP, SG, TW, US\]\n\s+urls:\s*\*sub_urls\n\s+filter:\s*\*exclude_filter/g
@@ -429,7 +432,7 @@ check("egern: YAML 1.2 锚点直选节点、内联 LAN/Synology/Apple TV+、geoi
     assert.ok(!rulesBlock.includes("ChinaIP.yaml"), "Egern 应使用原生 geoip: CN，不应再引用 ChinaIP.yaml");
     assert.match(rulesBlock, /- ip_cidr:\n\s+match: 1\.1\.1\.1\/32\n\s+policy: 主代理\n\s+no_resolve: true/);
     assert.match(rulesBlock, /- ip_cidr:\n\s+match: 8\.8\.8\.8\/32\n\s+policy: 主代理\n\s+no_resolve: true/);
-    assert.match(rulesBlock, /- geoip:\n\s+match: CN\n\s+policy: DIRECT\n\s+no_resolve: true/);
+    assert.match(rulesBlock, /- geoip:\n\s+match: CN\n\s+policy: DIRECT(?!\n\s+no_resolve)/);
     assertGithubBeforeAI(rulesBlock, "Egern");
     assertInlineSynologyAndAppleTV(rulesBlock, "Egern", "egern");
 });
@@ -443,6 +446,11 @@ check("egern: DNS 国内外拆分——Reject DNS 拦截、block_ips、国内 Do
         dnsBlock,
         /proxy_rule_set:\n\s+match: "https:\/\/cdn\.jsdmirror\.com\/gh\/Repcz\/Tool@X\/Egern\/Rules\/Reject\.yaml"\n\s+value: reject/,
         "Egern dns.forward 应通过 Reject.yaml 在 DNS 层拦截广告"
+    );
+    assert.match(
+        dnsBlock,
+        /domain_suffix:\n\s+match: home\n\s+value: system/,
+        "Egern dns.forward 应包含 home 系统解析"
     );
     assert.match(
         dnsBlock,
@@ -497,7 +505,7 @@ check("yaml-structure: Stash.yaml 与 Egern.yaml 无制表符、无重复顶层�
 
 // 2c. 7 端静态配置策略组/规则集交叉引用完整性检查
 check("static-cross-references: 7 端静态配置规则目标与规则集引用均完整无悬空", () => {
-    const surgeBuiltins = new Set(["DIRECT", "REJECT", "REJECT-TINYGIF", "REJECT-NO-DROP"]);
+    const surgeBuiltins = new Set(["DIRECT", "REJECT", "REJECT-DROP", "REJECT-TINYGIF", "REJECT-NO-DROP"]);
     const surgeRuleOptions = new Set(["no-resolve", "pre-matching", "extended-matching", "dns-failed", "force-remote-dns"]);
 
     function checkIniStyleClient(content, client) {
@@ -700,7 +708,7 @@ check("readmes: 根目录与各端 README 版本及特性描述准确", () => {
     assert.ok(rootReadme.includes("no-ipv6") && rootReadme.includes("Tunnel IPv6"), "根 README 应准确说明 QX 与 Stash IPv6 机制");
 
     const clashReadme = readUtf8("Clash/README.md");
-    assert.ok(clashReadme.includes("1.19.27"));
+    assert.ok(clashReadme.includes("1.19.27") && clashReadme.includes("1.19.34"));
     assert.ok(clashReadme.includes("Clash Party") && clashReadme.includes("FlClash"));
     assert.ok(clashReadme.includes("AWAvenue-Ads-Rule"));
 
@@ -712,12 +720,16 @@ check("readmes: 根目录与各端 README 版本及特性描述准确", () => {
     assert.ok(readUtf8("Surge/README.md").includes("iOS 5.14.0+ / Mac 5.9.0+"));
     assert.ok(readUtf8("Surge/README.md").includes("6.5.0+"));
 
+    const surfboardReadme = readUtf8("Surfboard/README.md");
+    assert.ok(surfboardReadme.includes("2.35.1") && surfboardReadme.includes("2.36.0"));
+
     const egernReadme = readUtf8("Egern/README.md");
     assert.ok(egernReadme.includes("iOS / iPadOS / macOS / tvOS"), "Egern README 应标明 iOS / iPadOS / macOS / tvOS");
 
     const stashReadme = readUtf8("Stash/README.md");
     assert.ok(stashReadme.includes("iOS 3.6+"));
     assert.ok(stashReadme.includes("macOS 4.3+"));
+    assert.ok(stashReadme.includes("5.1+") && stashReadme.includes("smart"));
     assert.ok(stashReadme.includes("AWAvenue-Ads-Rule"));
 
     assert.ok(readUtf8("Loon/README.md").includes("iOS 3.2.5 (789)+"));
@@ -1099,6 +1111,53 @@ check("clash-runtime: B11 anytls 指纹、reject/dns 无 ip-version、空 realit
     assert.equal(byName.get("MyDns")["ip-version"], undefined, "dns 不应注入 ip-version");
 });
 
+check("clash-runtime: A5 入站与 sub-rules 清洗、B1 geo-auto-update、B2 扩展指纹规范化与补全", () => {
+    const { main } = loadClashMain();
+    const out = main({
+        "geo-auto-update": true,
+        "sub-rules": { inner: ["MATCH,DIRECT"] },
+        proxies: [
+            { name: "HK", type: "ss", server: "1.1.1.1", port: 443 },
+            { name: "FPOld", type: "trojan", server: "1.1.1.2", port: 443, password: "p", "client-fingerprint": "chrome_psk" },
+            { name: "FP120", type: "trojan", server: "1.1.1.3", port: 443, password: "p", "client-fingerprint": "chrome120" },
+            { name: "SnellPlain", type: "snell", server: "1.1.1.4", port: 443, psk: "p", version: 4 },
+            { name: "SnellST", type: "snell", server: "1.1.1.5", port: 443, psk: "p", version: 6, "obfs-opts": { mode: "shadow-tls", host: "a.test", password: "s", version: 3 } },
+            { name: "XhttpDS", type: "vless", server: "1.1.1.6", port: 80, uuid: "u", network: "xhttp", "xhttp-opts": { "download-settings": { tls: true, "client-fingerprint": "randomized" } } },
+            { name: "XhttpDSTls", type: "vless", server: "1.1.1.7", port: 80, uuid: "u", network: "xhttp", "xhttp-opts": { "download-settings": { tls: true } } }
+        ],
+        listeners: [
+            { name: "l1", type: "mixed", port: 7891, rule: "inner", proxy: "HK" },
+            { name: "l2", type: "socks", port: 7892, proxy: "GoneGroup" },
+            { name: "l3", type: "http", port: 7893, proxy: "主代理" }
+        ],
+        tunnels: [
+            "tcp,127.0.0.1:6553,1.1.1.1:53,HK",
+            "udp,127.0.0.1:6554,1.1.1.1:53,GoneGroup",
+            { network: ["tcp"], address: "127.0.0.1:6555", target: "1.1.1.1:53", proxy: "HK" },
+            { network: ["udp"], address: "127.0.0.1:6556", target: "1.1.1.1:53", proxy: "GoneGroup" }
+        ]
+    });
+
+    assert.equal(out["geo-auto-update"], false, "应显式关闭冗余的 geo-auto-update");
+    assert.equal(out["sub-rules"], undefined, "sub-rules 应被删除");
+    assert.equal(out.listeners[0].rule, undefined, "悬空 listener.rule 应被删除");
+    assert.equal(out.listeners[0].proxy, "节点·HK", "listener.proxy 应同步改名映射");
+    assert.equal(out.listeners[1].proxy, undefined, "悬空 listener.proxy 应被删除");
+    assert.equal(out.listeners[2].proxy, "主代理", "合法策略组引用应保留");
+    assert.equal(out.tunnels[0], "tcp,127.0.0.1:6553,1.1.1.1:53,节点·HK", "字符串 tunnel 改名引用应同步");
+    assert.equal(out.tunnels[1], "udp,127.0.0.1:6554,1.1.1.1:53", "字符串 tunnel 悬空 proxy 应剥离");
+    assert.equal(out.tunnels[2].proxy, "节点·HK", "对象 tunnel 改名引用应同步");
+    assert.equal(out.tunnels[3].proxy, undefined, "对象 tunnel 悬空 proxy 应删除");
+
+    const byName = new Map(out.proxies.map(p => [p.name, p]));
+    assert.equal(byName.get("FPOld")["client-fingerprint"], "chrome");
+    assert.equal(byName.get("FP120")["client-fingerprint"], "chrome120");
+    assert.equal(byName.get("SnellPlain")["client-fingerprint"], undefined, "无 TLS 混淆的 snell 不应加指纹");
+    assert.equal(byName.get("SnellST")["client-fingerprint"], "chrome", "shadow-tls snell 应补全 chrome 指纹");
+    assert.equal(byName.get("XhttpDS")["xhttp-opts"]["download-settings"]["client-fingerprint"], "random");
+    assert.equal(byName.get("XhttpDSTls")["xhttp-opts"]["download-settings"]["client-fingerprint"], "chrome", "非 TLS 上行 + TLS download-settings 应补全 chrome 指纹");
+});
+
 check("clash-runtime: B1 逗号分段 DNS policy、B2 裸标志与百分号改名引用、B3 空 policy 清理", () => {
     const { main } = loadClashMain();
 
@@ -1351,6 +1410,7 @@ check("concord-contract: 不兼容告警源被静默清除（含 B5 保留 ECH�
         proxies: [
             C_OK,
             { name: "TS", type: "tailscale", server: "x", port: 1 },
+            { name: "ET", type: "easytier", server: "x", port: 1 },
             { name: "KP", type: "vmess", server: "x", port: 1, uuid: "u", cipher: "auto", network: "kcp" },
             { name: "ST", type: "vless", server: "x", port: 1, uuid: "u", "restls-opts": { password: "p" } },
             { name: "PL", type: "ss", server: "x", port: 1, cipher: "aes-128-gcm", password: "p", plugin: "kcptun" },
@@ -1377,6 +1437,7 @@ check("concord-contract: 不兼容告警源被静默清除（含 B5 保留 ECH�
         ],
         "geodata-mode": true,
         "tuic-server": { enable: true },
+        iptables: true,
         "global-client-fingerprint": "chrome",
         "lgbm-auto-update": true,
         "lgbm-update-interval": 72,
@@ -1396,17 +1457,17 @@ check("concord-contract: 不兼容告警源被静默清除（含 B5 保留 ECH�
         tls: { certificate: "a" },
         "geox-url": { geoip: "geoip.dat", mmdb: "geo.mmdb" },
         dns: {
-            nameserver: ["dhcp://en0", "ts://bad", "223.5.5.5"]
+            nameserver: ["dhcp://en0", "ts://ts-node", "et://bad", "223.5.5.5"]
         }
     });
     const names = out.proxies.map(p => p.name);
     assert.deepEqual(
-        names.filter(n => ["TS", "KP", "ST", "PL", "XD", "RH", "HO", "H2R", "H2D", "SN6", "SN6O", "SNR", "SNU", "SNC"].includes(n)),
+        names.filter(n => ["ET", "KP", "ST", "PL", "XD", "RH", "HO", "H2R", "H2D", "SN6", "SN6O", "SNR", "SNU", "SNC"].includes(n)),
         [],
         "不支持节点应剔除"
     );
-    // B5: v2ray-plugin + TLS + ECH (SNE) 与 OpenVPN (OVPN) 内核均已支持，应保留
-    for (const kept of ["MU", "RE", "H2OFF", "SNE", "SNEOFF", "FP120", "XF120", "OVPN"]) {
+    // B5 / A1: tailscale、v2ray-plugin + TLS + ECH (SNE) 与 OpenVPN (OVPN) 内核均已支持，应保留
+    for (const kept of ["TS", "MU", "RE", "H2OFF", "SNE", "SNEOFF", "FP120", "XF120", "OVPN"]) {
         assert.ok(names.includes(kept), kept + " 内核可构建，不应误删");
     }
     // B6: 废弃指纹被改写，chrome120 保留不动
@@ -1421,10 +1482,11 @@ check("concord-contract: 不兼容告警源被静默清除（含 B5 保留 ECH�
         "chrome120",
         "xhttp download-settings 内 chrome120 应原样保留"
     );
-    // B9: 顶层 T2 死键（含 tuic-server/lgbm-*）与 profile.smart-collector-size 消失
-    for (const key of ["tuic-server", "global-client-fingerprint", "external-ui", "lgbm-auto-update", "lgbm-update-interval", "lgbm-url"]) {
+    // B9 / A1: 顶层 T2 死键（含 iptables/lgbm-*）与 profile.smart-collector-size 消失；tuic-server 原生透传保留
+    for (const key of ["iptables", "global-client-fingerprint", "external-ui", "lgbm-auto-update", "lgbm-update-interval", "lgbm-url"]) {
         assert.equal(out[key], undefined, key + " 应被剔除");
     }
+    assert.deepEqual(out["tuic-server"], { enable: true }, "tuic-server 应原样透传");
     assert.equal(out.profile["smart-collector-size"], undefined, "profile.smart-collector-size 应被剔除");
     // 2026-11-26/27: INERT 键与内建入站配置应原样透传
     assert.equal(out["geodata-mode"], true, "INERT 键 geodata-mode 应原样透传");
@@ -1446,7 +1508,8 @@ check("concord-contract: 不兼容告警源被静默清除（含 B5 保留 ECH�
     assert.equal(out["geox-url"].geoip, "geoip.dat", "INERT 键 geox-url.geoip 应透传");
     assert.equal(out.tls.certificate, undefined);
     assert.ok(out.dns.nameserver.includes("system://"), "dhcp:// 应改写为 system://");
-    assert.ok(!out.dns.nameserver.some(s => s.startsWith("ts://")), "ts:// 应丢弃");
+    assert.ok(out.dns.nameserver.includes("ts://ts-node"), "ts:// 应原生保留");
+    assert.ok(!out.dns.nameserver.some(s => s.startsWith("et://")), "et:// 应丢弃");
     assert.ok(out.dns.nameserver.includes("223.5.5.5"), "合法订阅上游应继承");
     assert.equal(warnings.length, 0, "清洗不应产生日志: " + warnings.join("; "));
 });
@@ -1504,6 +1567,8 @@ check("concord-contract: B4/B7/B8/B9/B11/C1/C2/C4 运行时专项回归", () => 
             { name: "VLESS Empty Reality", type: "vless", server: "1.1.1.4", port: 80, uuid: "u", "reality-opts": {} },
             { name: "MyReject", type: "reject" },
             { name: "MyDns", type: "dns" },
+            { name: "SnellST", type: "snell", server: "1.1.1.7", port: 443, psk: "psk-12-bytes!!", version: 6, "obfs-opts": { mode: "shadow-tls", host: "a.test", password: "s", version: 3 } },
+            { name: "XhttpDSTls", type: "vless", server: "1.1.1.8", port: 80, uuid: "u", network: "xhttp", "xhttp-opts": { "download-settings": { tls: true } } },
             { name: "Tokyo 01", type: "ss", server: "1.1.1.5", port: 443, cipher: "aes-128-gcm", password: "p" },
             { name: "Osaka 02", type: "ss", server: "1.1.1.6", port: 443, cipher: "aes-128-gcm", password: "p" }
         ],
@@ -1536,11 +1601,16 @@ check("concord-contract: B4/B7/B8/B9/B11/C1/C2/C4 运行时专项回归", () => 
     assert.equal(byName.get("Z")["dialer-proxy"], "节点·HK", "dialer-proxy 应同步重写为 节点·HK");
     assert.equal(byName.get("Z").dialer_proxy, undefined);
 
-    // B11: anytls / empty reality-opts / reject & dns
+    // B11 / A2 / B2: anytls / empty reality-opts / reject & dns / snell & xhttp download-settings
     assert.equal(byName.get("AnyTLS 01")["client-fingerprint"], "chrome");
     assert.equal(byName.get("VLESS Empty Reality")["client-fingerprint"], undefined);
+    assert.equal(byName.get("SnellST")["client-fingerprint"], "chrome");
+    assert.equal(byName.get("XhttpDSTls")["xhttp-opts"]["download-settings"]["client-fingerprint"], "chrome");
     assert.equal(byName.get("MyReject")["ip-version"], undefined);
     assert.equal(byName.get("MyDns")["ip-version"], undefined);
+    assert.ok(!out["proxy-groups"].find(g => g.name === "静态").proxies.includes("MyDns"), "type: dns 不应进入静态组");
+    assert.ok(!out["proxy-groups"].find(g => g.name === "AI").proxies.includes("MyDns"), "type: dns 不应进入业务组");
+    assert.ok(!out["proxy-groups"].find(g => g.name === "兜底").proxies.includes("MyDns"), "type: dns 不应进入兜底组");
 
     // B8: DomainTrie 非法模式全部过滤，合法模式保留
     const fif = out.dns["fake-ip-filter"];
@@ -1575,22 +1645,24 @@ check("concord-contract: B4/B7/B8/B9/B11/C1/C2/C4 运行时专项回归", () => 
     });
     assert.equal(outUrlTest["proxy-groups"].find(g => g.name === "JP").type, "url-test");
 
-    // B2 + B3: 裸 # 标志、百分号/改名引用与空 proxy-server-nameserver-policy 清理
+    // B2 + B3 + A3 + A4: 裸 # 标志、网卡绑定、百分号/改名引用与 policy 合并/空清理
     const outDns = main({
         proxies: [
             { name: "SG", type: "ss", server: "1.1.1.1", port: 443, cipher: "aes-128-gcm", password: "p" },
             { name: "香港 01", type: "ss", server: "1.1.1.2", port: 443, cipher: "aes-128-gcm", password: "p" }
         ],
         "rule-providers": {
-            "local-file": { type: "file", behavior: "domain", path: "./local.yaml" }
+            "local-file": { type: "file", behavior: "domain", path: "./local.yaml" },
+            "cn-domain": { type: "http", behavior: "domain", url: "https://example.com/cn.yaml", path: "./cn.yaml" }
         },
         dns: {
             nameserver: [
                 "https://1.1.1.1/dns-query#h3&disable-ipv6&disable-qtype-65",
                 "https://8.8.8.8/dns-query#%E9%A6%99%E6%B8%AF%2001",
-                "https://9.9.9.9/dns-query#SG"
+                "https://9.9.9.9/dns-query#SG",
+                "https://1.0.0.1/dns-query#eth0"
             ],
-            "proxy-server-nameserver": ["https://223.5.5.5/dns-query#h3&主代理"],
+            "proxy-server-nameserver": ["https://223.5.5.5/dns-query#h3&主代理", "https://119.29.29.29/dns-query#en0"],
             "proxy-server-nameserver-policy": {
                 "rule-set:local-file": ["223.5.5.5"]
             }
@@ -1598,11 +1670,29 @@ check("concord-contract: B4/B7/B8/B9/B11/C1/C2/C4 运行时专项回归", () => 
     });
     assert.ok(outDns.dns.nameserver.includes("https://1.1.1.1/dns-query#h3&disable-ipv6&disable-qtype-65"));
     assert.ok(outDns.dns.nameserver.includes("https://8.8.8.8/dns-query#%E9%A6%99%E6%B8%AF%2001"));
+    assert.ok(outDns.dns.nameserver.includes("https://1.0.0.1/dns-query#eth0"), "nameserver 中网卡绑定 #eth0 应保留");
     assert.ok(
         outDns.dns.nameserver.some(s => s.startsWith("https://9.9.9.9/dns-query#") && decodeURIComponent(s.split("#")[1]) === "节点·SG")
     );
-    assert.deepEqual(outDns.dns["proxy-server-nameserver"], ["https://223.5.5.5/dns-query#h3"]);
+    assert.deepEqual(outDns.dns["proxy-server-nameserver"], ["https://223.5.5.5/dns-query#h3", "https://119.29.29.29/dns-query#en0"]);
     assert.equal(outDns.dns["proxy-server-nameserver-policy"], undefined);
+
+    // A4: 两个不同键重写后折叠为同一个 rule-set:sub-cn-domain 时应合并而非覆盖
+    const outMerge = main({
+        proxies: [{ name: "SG", type: "ss", server: "1.1.1.1", port: 443, cipher: "aes-128-gcm", password: "p" }],
+        "rule-providers": {
+            "local-file": { type: "file", behavior: "domain", path: "./local.yaml" },
+            "cn-domain": { type: "http", behavior: "domain", url: "https://example.com/cn.yaml", path: "./cn.yaml" }
+        },
+        dns: {
+            "proxy-server-nameserver": ["223.5.5.5"],
+            "proxy-server-nameserver-policy": {
+                "rule-set:local-file,cn-domain": ["223.5.5.5"],
+                "rule-set:cn-domain": ["119.29.29.29"]
+            }
+        }
+    });
+    assert.deepEqual(outMerge.dns["proxy-server-nameserver-policy"]["rule-set:sub-cn-domain"], ["223.5.5.5", "119.29.29.29"]);
 });
 
 check("concord-contract: 引用完整——规则/规则集/dialer/hosts（含 B9 IPv6/script 边界）", () => {
@@ -1757,7 +1847,7 @@ check("concord-contract: 无可用节点时提示一次", () => {
     const out = main({
         proxies: [
             { name: "剩余流量：10GB", type: "ss", server: "1.1.1.1", port: 443, cipher: "aes-128-gcm", password: "p" },
-            { name: "TS", type: "tailscale", server: "x", port: 1 }
+            { name: "ET", type: "easytier", server: "x", port: 1 }
         ]
     });
     assert.equal(warnings.length, 1, "无可用节点应提示一次: " + warnings.join("; "));

@@ -5,7 +5,7 @@
 // 订阅中内核不支持的字段按黑名单静默丢弃，未知键保留；
 // 客户端自管设置原样透传，仅删除内核不应用的死键（不改变任何生效设置）。
 // 净化依据：concord crates/config/src/keys.rs、proxy/parse.rs、listener/、dns.rs 与 crates/proxy 节点构建行为
-// （2026-11-27 按内核源码复核；docs/compatibility.md 滞后于代码时以代码为准）。
+// （2026-11-29 按内核源码复核；docs/compatibility.md 滞后于代码时以代码为准）。
 // 首次启动联网下载规则集，在日志确认全部下载成功。
 
 // ── 可调参数（集中维护） ──
@@ -53,10 +53,10 @@ const utf8Bytes = str => {
 // 只处理订阅透传内容；黑名单外的未知键保留
 
 // Concord 未实现的 mihomo 扩展功能键（keys.rs TOP_T2），静默丢弃。
-// allow-lan、lan-allowed-ips、lan-disallowed-ips、listeners、tunnels、ss-config、vmess-config 等均被 Concord 支持，
+// allow-lan、lan-allowed-ips、lan-disallowed-ips、listeners、tunnels、ss-config、vmess-config、tuic-server 等均被 Concord 支持，
 // geodata-mode、geosite-matcher、etag-support 已归入 TOP_INERT 静默忽略，均原样透传
 const CONCORD_TOP_DROP = [
-    "tuic-server", "iptables", "clash-for-android", "inbound-tfo",
+    "iptables", "clash-for-android", "inbound-tfo",
     "inbound-mptcp",
     "external-controller-pipe", "external-controller-unix",
     "external-controller-tls", "external-controller-routing-mark",
@@ -119,9 +119,9 @@ const CONCORD_AMNEZIA_DROP = [
 ];
 
 // 不支持的节点类型（parse.rs T2_PROXY_TYPES）：保留会被 Concord 隔离，引用组拒绝连接
-// openvpn 自 2026-11-26 起已原生支持，不再丢弃
+// openvpn 与 tailscale 均已原生支持（T1_PROXY_TYPES），不再丢弃
 const CONCORD_NODE_TYPE_DROP = new Set([
-    "tailscale", "easytier", "zerotier", "sudoku", "trusttunnel"
+    "easytier", "zerotier", "sudoku", "trusttunnel"
 ]);
 
 // 不支持的传输网络（parse.rs T2_NETWORKS）
@@ -148,8 +148,8 @@ const CONCORD_SS_CIPHER_OK = new Set([
     "rc4-md5", "chacha20-ietf", "chacha20", "xchacha20"
 ]);
 
-// Concord 不支持的 DNS 上游协议（剔除后清空的 policy 键会成 REFUSED 黑洞）
-const CONCORD_DNS_SCHEME_DROP = /^(ts|tailscale|et|easytier):\/\//i;
+// Concord 不支持的 DNS 上游协议（剔除后清空的 policy 键会成 REFUSED 黑洞；ts:// / tailscale:// 已原生支持）
+const CONCORD_DNS_SCHEME_DROP = /^(et|easytier):\/\//i;
 
 // 节点准入：丢弃 Concord 会隔离/拒绝构建的节点，避免策略组引用后整组拒绝连接
 const concordNodeSupported = proxy => {
@@ -914,7 +914,10 @@ function main(params, profileName) {
     };
 
     const allProxies = params.proxies.filter(
-        proxy => proxy.type !== "direct" && proxy.type !== "reject"
+        proxy =>
+            proxy.type !== "direct" &&
+            proxy.type !== "reject" &&
+            proxy.type !== "dns"
     );
     const excludeRe = toJsRegex(excludeFilter);
 
@@ -953,10 +956,16 @@ function main(params, profileName) {
     // 取自实际会建组的 activeRegions，避免引用到节点不足未建组的地区（内核找不到目标组）
     const REGION_NAMES = new Set(activeRegionNames);
 
-    // 包含 type: direct 的命名出站（常用于指定网卡出口的 DNS 上游），仅排除 type: reject
+    // 包含 type: direct 的命名出站（常用于指定网卡出口的 DNS 上游），排除 reject / dns
     const PROXY_NAMES = new Set(
         params.proxies
-            .filter(proxy => proxy && proxy.name && proxy.type !== "reject")
+            .filter(
+                proxy =>
+                    proxy &&
+                    proxy.name &&
+                    proxy.type !== "reject" &&
+                    proxy.type !== "dns"
+            )
             .map(proxy => proxy.name)
     );
 
@@ -966,6 +975,19 @@ function main(params, profileName) {
         OWN_GROUPS.indexOf(ref) !== -1 ||
         REGION_NAMES.has(ref) ||
         PROXY_NAMES.has(ref);
+
+    const subInterfaceName =
+        typeof params["interface-name"] === "string"
+            ? params["interface-name"].trim()
+            : "";
+
+    // 常见网卡名模式（Linux / macOS / BSD / Android / OpenWrt），避免误把网卡绑定（如 #en0 / #eth0）当成悬空策略组改写为 #RULES
+    const INTERFACE_NAME_RE =
+        /^(?:eth|en|em|igb|ix|re|vtnet|wlan|wifi|utun|tun|tap|wg|ppp|br|bond|vlan|docker|virbr|veth|rmnet_data|ccmni|pdp_ip|tailscale|lo)\d+(?:\.\d+)?$|^(?:en|wl)[opsx][a-z0-9]+(?:\.\d+)?$|^(?:br|pppoe)-[a-z0-9_-]+$|^zt[a-z0-9]+$|^lo$/i;
+
+    const isInterfaceBinding = ref =>
+        (subInterfaceName !== "" && ref === subInterfaceName) ||
+        INTERFACE_NAME_RE.test(ref);
 
     const asPlainObject = value =>
         isPlainObject(value) ? value : {};
@@ -1195,7 +1217,7 @@ function main(params, profileName) {
         targetParts.forEach(({ raw, decoded }) => {
             const renamed = proxyRenames.get(decoded);
             const resolved = renamed || decoded;
-            if (refValid(resolved)) {
+            if (refValid(resolved) || isInterfaceBinding(decoded)) {
                 validTargets.push(
                     renamed
                         ? renamed
@@ -1244,7 +1266,8 @@ function main(params, profileName) {
                 return (
                     decoded.includes("=") ||
                     (isBareDnsFlag(decoded) &&
-                        decoded.toLowerCase() !== "respect-rules")
+                        decoded.toLowerCase() !== "respect-rules") ||
+                    isInterfaceBinding(decoded)
                 );
             });
 
@@ -1743,7 +1766,7 @@ function main(params, profileName) {
             const names = ruleSetNames(key);
 
             if (names.length === 0) {
-                newPolicy[key] = oldPolicy[key];
+                mergePolicyEntry(newPolicy, key, oldPolicy[key]);
                 return;
             }
 
@@ -1758,16 +1781,26 @@ function main(params, profileName) {
                 name => renamedRS[name] || name
             );
 
-            newPolicy[
-                "rule-set:" + rewrittenNames.join(",")
-            ] = oldPolicy[key];
+            mergePolicyEntry(
+                newPolicy,
+                "rule-set:" + rewrittenNames.join(","),
+                oldPolicy[key]
+            );
         });
 
-        params.dns["proxy-server-nameserver-policy"] = newPolicy;
+        if (Object.keys(newPolicy).length > 0) {
+            params.dns["proxy-server-nameserver-policy"] = newPolicy;
+        } else {
+            delete params.dns["proxy-server-nameserver-policy"];
+        }
     }
 
-    // 默认指纹补全 vless/vmess/trojan/anytls 四类常见 TLS 节点；不覆盖订阅已有取值
+    // 默认指纹补全：vless/vmess/trojan/anytls TLS 节点、snell（shadow-tls / jls）与 xhttp download-settings；不覆盖已有取值
     const FP_OK = ["vless", "vmess", "trojan", "anytls"];
+    const hasRealityKey = opts =>
+        isPlainObject(opts) &&
+        typeof opts["public-key"] === "string" &&
+        opts["public-key"].trim() !== "";
 
     params.proxies.forEach(proxy => {
         // 不覆盖订阅已有的取值；direct/reject/dns 虚拟出站无需 ip-version
@@ -1784,20 +1817,40 @@ function main(params, profileName) {
             FP_OK.indexOf(proxy.type) !== -1 &&
             !proxy["client-fingerprint"]
         ) {
-            const realityOpts = isPlainObject(proxy["reality-opts"])
-                ? proxy["reality-opts"]
-                : {};
-            const hasReality =
-                typeof realityOpts["public-key"] === "string" &&
-                realityOpts["public-key"].trim() !== "";
             const usesTLS =
                 proxy.type === "trojan" ||
                 proxy.type === "anytls" ||
                 proxy.tls === true ||
-                hasReality;
+                hasRealityKey(proxy["reality-opts"]);
 
             if (usesTLS) {
                 proxy["client-fingerprint"] = "chrome";
+            }
+        }
+
+        if (proxy.type === "snell" && !proxy["client-fingerprint"]) {
+            const obfsMode = isPlainObject(proxy["obfs-opts"])
+                ? String(proxy["obfs-opts"].mode || "").toLowerCase()
+                : "";
+            if (obfsMode === "shadow-tls" || obfsMode === "jls") {
+                proxy["client-fingerprint"] = "chrome";
+            }
+        }
+
+        if (
+            (proxy.type === "vless" ||
+                proxy.type === "vmess" ||
+                proxy.type === "trojan") &&
+            isPlainObject(proxy["xhttp-opts"]) &&
+            isPlainObject(proxy["xhttp-opts"]["download-settings"])
+        ) {
+            const ds = proxy["xhttp-opts"]["download-settings"];
+            if (!ds["client-fingerprint"] && !proxy["client-fingerprint"]) {
+                const dsUsesTLS =
+                    ds.tls === true || hasRealityKey(ds["reality-opts"]);
+                if (dsUsesTLS) {
+                    ds["client-fingerprint"] = "chrome";
+                }
             }
         }
     });

@@ -31,5 +31,5 @@
 ## ✨ 核心特性
 
 - **Smart 智能选点**：五大地区组采用 `smart` 策略，结合连接延迟与历史记忆自动优选节点。
-- **现代加密 DNS**：使用 IP 直连 DoH（`encrypted-dns-server`）与 `[Host]` 局域网系统解析，避免引导依赖与内网域名解析失败。
-- **深度匹配与拦截**：内置 `SYSTEM` / `LAN` 规则集、广告规则 `pre-matching` 预匹配，以及业务规则集 `extended-matching` 扩展匹配。
+- **现代加密 DNS**：使用 IP 直连 DoH（`encrypted-dns-server`）、`hijack-dns = *:53`、`exclude-simple-hostnames = true` 与 `[Host]` 局域网系统解析，避免引导依赖、硬编码 DNS 绕过与内网域名解析失败。
+- **深度匹配与拦截**：内置 `SYSTEM` / `LAN` 规则集、广告规则 `REJECT-DROP` + `pre-matching` 预匹配（静默丢包防止重试风暴），以及业务规则集 `extended-matching` 扩展匹配。

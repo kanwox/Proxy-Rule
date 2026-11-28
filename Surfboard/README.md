@@ -1,6 +1,6 @@
 # Surfboard
 
-适用于 Surfboard 客户端（Android）。
+适用于 Surfboard 客户端（Android，需 `mobile-2.35.1` 及以上以支持 `update-interval` 自动更新，推荐 `2.36.0+` 以获得 VLESS / REALITY / XHTTP 与 DoH3 / DoQ / DoT 支持）。
 
 ---
 

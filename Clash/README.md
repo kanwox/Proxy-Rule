@@ -1,6 +1,6 @@
 # Clash / Mihomo
 
-适用于支持 JavaScript 扩展脚本 / 覆写的 Mihomo 内核客户端（内核需 ≥ 1.19.27，仅支持节点平铺订阅），如 Clash Verge Rev、Clash Party、FlClash 等。
+适用于支持 JavaScript 扩展脚本 / 覆写的 Mihomo 内核客户端（内核最低需 ≥ 1.19.27，推荐 ≥ 1.19.34；仅支持节点平铺订阅），如 Clash Verge Rev、Clash Party、FlClash 等。推荐新版本包含 Snell v6 支持、TLS 安全修复（CVE-2026-97031）、重载保留 Fake-IP 池状态及 DoH 拨号并发上限等改进。
 
 ---
 
@@ -33,7 +33,7 @@
 - **连接嗅探**：启用 HTTP/TLS/QUIC 嗅探与 `parse-pure-ip`，仅跳过官方最小 `skip-domain`（`Mijia Cloud`、`+.push.apple.com`），确保纯 IP 连接正确还原域名。
 - **DNS 优化**：Fake-IP (ARC) + `fake-ip-filter-mode: rule`（优先保证 Apple / Google / Microsoft / AI 域名走 Fake-IP，防止国内 CDN 绕过分流）；国内采用 IP-DoH（`223.5.5.5` / `1.12.12.12`）。
 - **广告拦截**：广告规则集采用 `AWAvenue-Ads-Rule`（`.mrs` 格式），兼顾国内外应用广告 SDK 与低误杀率，并在 DNS 层直接拒答。
-- **节点净化**：自动过滤流量/到期等提示节点，重名自动编号，为 VLESS / VMess / Trojan / AnyTLS 补全 Chrome uTLS 指纹。
+- **节点净化**：自动过滤流量/到期等提示节点，重名自动编号，为 VLESS / VMess / Trojan / AnyTLS、带 TLS 混淆的 Snell 与 XHTTP `download-settings` 补全 Chrome uTLS 指纹（并规范化废弃指纹名）；同步清理 `sub-rules` 及 `listeners` / `tunnels` 悬空引用，并显式关闭冗余的 `geo-auto-update`。
 - **IPv6 默认开启**：与其他端一致；订阅显式 `ipv6: false` 则尊重，纯 IPv4 环境如遇异常可显式关闭。
 - **注意事项**：规则内置 `IN-TYPE,TUN` + `DST-PORT,853` 阻断以防 DoT 绕过分流；Android 如开启系统「私人 DNS」并设为严格指定主机名可能断网，请改为「自动」或关闭。
 
